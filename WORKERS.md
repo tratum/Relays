@@ -2,7 +2,7 @@
 
 ---
 
-Just a Side Note:
+Side Note:
 
 1. What is a Worker in Relays ?
 
@@ -289,6 +289,11 @@ Below given are Failures at every critical point:
    - Only valid state transitions are persisted
    - No Notification state becomes corrupted
 
+   **Design Trade-Offs**
+   - This Scenario could be prevented by using database-level locking when reading notifications, ensuring that only one worker can claim a notification at a time
+   - However this approach is intentionally not used because it reduces Throughput which limits parralelism and becomes a bottleneck under load
+   - Increases Failure Coupling i.e. if a worker crashes while holding a lock, other workers are blocked thereby turning a single-worker failure into a system-wide slowdown
+
 <br>
 
 6. Redis Data Loss
@@ -308,7 +313,6 @@ Below given are Failures at every critical point:
    No Notification Loss
 
 <br>
-
 
 7. Worker Crashes and notification stays in processing forever
 
@@ -330,5 +334,11 @@ Below given are Failures at every critical point:
    **Guarantees**
    - No Incorrect Deliveries Occur
    - No State Corruption occurs
+
+   **Design Trade-Offs**
+   - A notification may remain in the `processing` state if a worker crashes after claiming ownership but before completing delivery or transitioning to a terminal state.
+   - This scenario represents a liveness concern rather than a correctness issue.
+   - The system intentionally does not automatically override the `processing` state to avoid unsafe duplicate deliveries. Instead, eventual progress can be restored through a separate recovery mechanism (e.g., a reaper or watchdog process) that detects notifications stuck in `processing` beyond a defined timeout and safely re-enqueues them.
+   - The Plan to add a Recovery Mechanism is Deferred Explicitly
 
 **Correctness is preserved but eventual progress requires a Recovery Mechanism**
