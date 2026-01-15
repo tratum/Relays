@@ -47,13 +47,32 @@ The DB consists of Two core tables:
 
 ### **State Transitions**:
 
-    - created (API accepted intent)  --->  queued (work is scheduled)
+```
+- created (API accepted intent)  --->  queued (work is scheduled)
 
-    - queued  --->  processing (worker picks it up)
+- queued  --->  processing (worker picks it up)
 
-    - processing  --->  sent  or  processing  ---> failed
+- processing  --->  sent  or  processing  ---> failed
 
-    - processing  --->  processing (retry)
+- processing  --->  processing (retry)
+```
+
+What does `created` means ?
+
+- The API has validated the request
+- The notfication record has been written in DB
+- Redis may or may not have a corresponding job yet
+
+What does `queued` mean ?
+
+- The system has scheduled work
+- No worker has claimed responsibility yet
+
+What does `processing` mean ?
+
+- A worker has authoritatively claimed the notification
+- Work is in progress
+- This claim is durable
 
 <br>
 
