@@ -6,7 +6,7 @@
 
 This document defines the **public HTTPS API contracts** for Relays.
 
-Relays exposes a unified notification API that allows clients to submit notification intents via HTTP and query their delivery state.
+Relays exposes a unified notification API that allows clients to submit notification intents via HTTPS and query their delivery state.
 
 This document specifies:
 
@@ -59,7 +59,7 @@ All endpoints are versioned under:
 https://api.relays.run/v1
 ```
 
-because This Structure allows:
+This Structure allows:
 
 - clean versioning
 - backwards-compatible evolution
@@ -218,22 +218,11 @@ GET https://api.relays.run/v1/notifications/{notification_id}
 
 <br>
 
-#### **Request Body**
+#### **Path Parameters**
 
-```json
-{
-  "notification_id": "a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f",
-  "channel": "email",
-  "to": "user@example.com",
-  "state": "processing",
-  "attempt_count": 2,
-  "max_attempts": 5,
-  "created_at": "2026-01-10T14:00:00Z",
-  "last_attempt_at": "2026-01-10T14:20:00Z",
-  "sent_at": null,
-  "last_error": "SMTP 421 Temporary service unavailable"
-}
-```
+| Name            | Type | Description             |
+| --------------- | ---- | ----------------------- |
+| notification_id | uuid | Notification identifier |
 
 <br>
 
@@ -283,7 +272,7 @@ GET https://api.relays.run/v1/notifications/{notification_id}
 - Status Code
 
   ```bash
-  404 NOT FOUND
+  404 Not Found
   ```
 
 - Response Body
@@ -313,10 +302,10 @@ GET https://api.relays.run/v1/notifications/{notification_id}
 #### **Rate Limiting**
 
 - Currently Not implemented in MVP.
-- Delivery Guarantees
 
-#### **At-least-once delivery**
+#### **Delivery Guarantees**
 
+- At-least-once delivery
 - Duplicate deliveries are possible
 - No exactly-once guarantees
 
