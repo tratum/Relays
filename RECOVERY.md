@@ -10,7 +10,7 @@ Recovery does **not** deliver notifications or decide outcomes. It exists solely
 
 ---
 
-## Core Principal
+## Core Principle
 
     PostgreSQL is the source of truth for both execution intent and recovery.
 
@@ -30,12 +30,23 @@ Recovery logic MUST obey the following rules:
 
 ### **Recovery is NOT allowed to:**
 
-- Mark a notification as sent
-- Mark a notification as failed
+- Mark a notification as `sent` or `failed`
 - Delete or modify delivery attempts
 - Rewrite historical facts
 - Bypass worker guard rails
 - Perform irreversible side effects (e.g., sending email)
+
+### Recovery does not guarantee uniqueness
+
+Recovery may enqueue duplicate execution jobs.
+
+This is acceptable because:
+
+- The system uses at-least-once delivery semantics
+- Workers always re-validate notification state from the DB
+- Invalid executions are safely refused by guard rails
+
+Recovery prioritizes restoring progress over minimizing duplicate scheduling.
 
       **Recovery restores execution, not outcomes.**
 
@@ -104,8 +115,9 @@ Recovery reintroduces execution only after sufficient time has passed to assume 
 
 **Recovery Action**
 
-- Re-enqueue notification immediately
+- Re-enqueue notification immediately (respect next_retry_at semantics)
 - Preserve `attempt_count` and `next_retry_at`
+- Emit metric `reaper.reenqueue.retry_intent_missing`
 
 **Rationale**
 
@@ -134,13 +146,13 @@ Redis is only responsible for executing intent, not storing it.
 
 **Recovery Action**
 
-- Enqueue notification for first execution
-- Idempotent by notification ID
+- Enqueue notification for first execution (idempotent by notification id)
+- Emit metric `reaper.reenqueue.never_queued`
 
 **Rationale**
 
 The notification intent is valid and durable.
-Recovery completes the missing execution step.
+API likely crashed after persistence; recovery completes enqueueing.
 
 <br>
 
@@ -148,7 +160,7 @@ Recovery completes the missing execution step.
 
 **Condition**
 
-- Redis queue is partially or fully wiped
+- Partial/total Redis wipe detected externally OR large queue-size discrepancy observed
 
 **Nature of the Failure**
 
@@ -157,8 +169,8 @@ Recovery completes the missing execution step.
 
 **Recovery Action**
 
-- No special-case handling required
-- Covered implicitly by DB-driven recovery scans
+- No special-case handling; covered by scanning DB for the cases above
+- Covered implicitly by Full Reconciiation DB-driven recovery scans
 
 **Rationale**
 
@@ -167,11 +179,27 @@ Recovery always derives execution from DB state.
 
 ---
 
+## Configurable Controls (Default Values)
+
+These Environment-Configurable values are the defaults for first deploy. Should be adjusted after observing behaviour
+
+- `PROCESSING_TIMEOUT` = 15m — duration after which processing is considered stuck.
+- `QUEUE_GRACE_PERIOD` = 1m — grace before enqueuing created notifications.
+- `RECOVERY_INTERVAL` = 5m — how often the reaper runs a pass.
+- `REAPER_BATCH_SIZE` = 1000 — number of notifications scanned/enqueued per pass per predicate.
+- `MAX_REENQUEUE_PER_RUN` = 10000 — safety cap to avoid floods.
+- `REENQUEUE_DELAY_ON_DUPLICATE` = 30s — backoff if re-enqueueing finds Redis already holds jobs (prevent thundering herd).
+- `ADVISORY_LOCK_KEY` = 12345 — used to ensure a single active reaper (Postgres advisory lock recommended).
+- `STUCK_ALERT_THRESHOLD` = 0.5% — proportion of stuck notifications that triggers alerting (example threshold).
+
+---
+
 ## Recovery Execution Model
 
 **Who Runs Recovery ?**
 
-Recovery is executed by a dedicated background recovery process (reaper).
+- A dedicated reaper process (long-running) OR a scheduled job (cron/scheduler).
+- Use a single active reaper pattern (Postgres advisory lock) to avoid concurrent conflicting runs.
 
 **_Characteristics_**:
 
@@ -181,8 +209,8 @@ Recovery is executed by a dedicated background recovery process (reaper).
 
 ### Execution Frequency
 
-- Periodic execution (e.g., every N minutes)
-- Non-real-time by design
+- Default: every `RECOVERY_INTERVAL` (5 minutes).
+- Use jitter to avoid coincidence with other periodic jobs.
 
 Rationale:
 
@@ -194,6 +222,8 @@ Rationale:
 Recovery selects candidates using explicit DB predicates, never Redis state.
 
 Selection is `index-backed` and scoped to non-terminal notifications only.
+
+Index-backed selection ensures recovery scans only relevant subsets of notifications and never performs full table scans.
 
 Examples:
 
@@ -217,6 +247,42 @@ Workers remain responsible for:
 - State transitions
 - Delivery execution
 - Retry decisions
+
+---
+
+## Safety Mechanisms
+
+### Worker re-validation
+
+- Every worker must fetch the notification from DB and run guard rails before acting. Reaper relies on that invariant.
+
+### Idempotency
+
+- Jobs are idempotent by notification id. Workers must be safe to attempt a notification multiple times.
+
+### Throttling and rate-limits
+
+- Reaper must respect MAX_REENQUEUE_PER_RUN and per-notification re-enqueue caps (e.g., do not re-enqueue a single notification more than once per PROCESSING_TIMEOUT window).
+
+### Avoiding thundering herd
+
+- If re-enqueueing many notifications at once, add small randomized delays per job or chunk re-enqueues across the run.
+
+### Metric & alerting
+
+Emit metrics for:
+
+- `reaper.scans.count`
+- `reaper.reenqueue.count` (by reason)
+- `reaper.lock_acquired` / `reaper.lock_failed`
+- `notifications.stuck.count` (gauge)
+- `notifications.pending_retry.count` (gauge)
+
+Alerting examples:
+
+- High rate of stuck notifications (e.g., > `STUCK_ALERT_THRESHOLD` of recent creations)
+- Reaper failing to acquire lock repeatedly
+- Reaper crash rate > X/day
 
 ---
 
@@ -264,8 +330,7 @@ Relays intentionally prioritizes:
 
 - Recovery may enqueue a duplicate job
 - Worker guard rails prevent invalid state transitions
-- Duplicate delivery attempts are possible
-- All attempts are recorded
+- Duplicates are visible in `delivery_attempts`; acceptable under at-least-once semantics.
 
 **Result:** Safe under at-least-once semantics
 
@@ -281,7 +346,7 @@ Relays intentionally prioritizes:
 
 ### Scenario 3: Recovery Process Crashes Mid-Scan
 
-- No state changes have occurred
-- Recovery will resume in the next run
+- No DB mutation was performed and No state changes have occurred
+- The run is idempotent and next scheduled run resumes.
 
 **Result:** No permanent impact
