@@ -1,5 +1,7 @@
 # Relays
 
+---
+
 Relays is an API-first Notification Delivery Service.
 
 It allows applications to submit notification requests via HTTP APIs and delivers them asynchronously with reliable status tracking and failure handling.

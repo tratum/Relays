@@ -1,5 +1,7 @@
 # Data Model
 
+---
+
 This Document defines the Persistent Data Model for **_Relays_**.
 
 **PostgresSQL is the Source of Truth** for all notification states

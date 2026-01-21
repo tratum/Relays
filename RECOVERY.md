@@ -1,5 +1,7 @@
 # Recovery and Reconciliation Model
 
+---
+
 ## Purpose
 
 This document defines the recovery and reconciliation model for Relays.
