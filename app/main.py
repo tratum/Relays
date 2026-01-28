@@ -1,0 +1,58 @@
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.api.v1.routes import router as v1Router
+from app.core.config import settings
+
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    """
+    Lifespan context for application startup/shutdown.
+
+    This runs once when FastAPI starts, then yields, and
+    runs cleanup code after shutdown.
+    """
+    # ---- Startup logic here ----
+    # e.g., warm up DB pools, preload configs, validate connections
+    # You can also attach to app.state if needed:
+    # app.state.some_resource = some_client
+
+    yield
+
+    # ---- Shutdown logic here ----
+    # e.g., close connections, flush buffers
+    # if app.state.some_resource:
+    #     await app.state.some_resource.close()
+
+
+def create_app() -> FastAPI:
+    """
+    Application factory.
+
+    This function creates and configures the FastAPI app.
+    Keeping this as a factory makes the app:
+    - testable
+    - reusable by ASGI servers
+    - safe for workers and migrations
+    """
+
+    app = FastAPI(
+        title="Relays",
+        description="API-First Notification Delivery Platform",
+        version=settings.VERSION,
+        docs_url="/docs" if settings.ENABLE_DOCS else None,
+        redoc_url=None,
+    )
+
+    # ---------------Routers-----------------
+    app.include_router(
+        v1Router,
+        prefix="/v1",
+    )
+
+    return app
+
+
+app = create_app()
