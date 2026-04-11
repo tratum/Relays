@@ -6,7 +6,11 @@ from fastapi.exceptions import RequestValidationError
 
 from app.api.v1.routes import router as v1Router
 from app.core.config import settings
-from app.core.exceptions import request_validation_exception_handler
+from app.core.exceptions import (
+    StarletteHTTPException,
+    http_exception_handler,
+    request_validation_exception_handler,
+)
 from app.db.session import close_db, init_db
 from app.middleware.request_id import RequestIDMiddleware
 
@@ -71,6 +75,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(
         RequestValidationError, request_validation_exception_handler
     )
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 
     return app
 

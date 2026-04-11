@@ -1,6 +1,7 @@
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 async def request_validation_exception_handler(
@@ -15,6 +16,39 @@ async def request_validation_exception_handler(
         content={
             "error": {
                 "code": "invalid_request",
+                "message": message,
+                "request_id": request_id,
+            }
+        },
+    )
+
+
+async def http_exception_handler(req: Request, exc: StarletteHTTPException):
+    request_id = getattr(req.state, "request_id", None)
+
+    if exc.status_code == 404:
+        code = "not_found"
+        message = (
+            exc.detail if isinstance(exc.detail, str) else "Resource not found"
+        )
+
+    elif exc.status_code == 401:
+        code = "unauthorized"
+        message = exc.detail or "Unauthorized"
+
+    elif exc.status_code == 403:
+        code = "forbidden"
+        message = exc.detail or "Forbidden"
+
+    else:
+        code = "http_error"
+        message = str(exc.detail) if exc.detail else "HTTP error"
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": code,
                 "message": message,
                 "request_id": request_id,
             }
