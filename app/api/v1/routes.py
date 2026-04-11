@@ -32,6 +32,10 @@ async def health_check():
         "The payload schema is selected automatically using the `channel` field."
     ),
     responses={
+        400: {
+          "model": RequestValidationErrorModel,
+          "description": "Bad Request",
+        },
         422: {
             "model": RequestValidationErrorModel,
             "description": "Validation Error",
@@ -71,6 +75,10 @@ async def notify(req: NotificationRequestBody, res: Response):
         "for a previously created notification."
     ),
     responses={
+        400: {
+          "model": RequestValidationErrorModel,
+          "description": "Bad Request",
+        },
         422: {
             "model": RequestValidationErrorModel,
             "description": "Validation Error",
