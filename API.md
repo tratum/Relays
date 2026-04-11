@@ -156,7 +156,8 @@ POST https://api.relays.run/v1/notifications
   ```json
   {
     "notification_id": "a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f",
-    "state": "created"
+    "state": "created",
+    "created_at": "2026-04-11T05:48:52.592944Z"
   }
   ```
 

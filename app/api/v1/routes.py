@@ -51,7 +51,7 @@ async def notify(req: NotificationRequestBody, res: Response):
 
     res.headers["Location"] = f"/v1/notifications/{notification_id}"
     return NotificationResponseBody(
-        id=notification_id, state=state, created_at=created_at
+        notification_id=notification_id, state=state, created_at=created_at
     )
 
 

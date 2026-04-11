@@ -1,5 +1,4 @@
 import re
-import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, ClassVar, Literal
@@ -160,7 +159,7 @@ NotificationRequestBody = Annotated[
 
 
 class NotificationResponseBody(BaseModel):
-    id: UUID4 = Field(
+    notification_id: UUID4 = Field(
         ...,
         description="Notification ID (UUID4)",
     )

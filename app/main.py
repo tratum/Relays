@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.v1.routes import router as v1Router
 from app.core.config import settings
 from app.db.session import close_db, init_db
+from app.middleware.request_id import RequestIDMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,6 +55,9 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=app_lifespan,
     )
+
+    # ---------------Middleware-----------------
+    app.add_middleware(RequestIDMiddleware)
 
     # ---------------Routers-----------------
     app.include_router(
