@@ -9,8 +9,9 @@ from starlette.responses import Response
 from app.api.v1.schemas import (
     GetNotificationResponseBody,
     NotificationRequestBody,
-    NotificationResponseBody,
     NotificationState,
+    PostNotificationResponseBody,
+    RequestValidationErrorModel,
 )
 
 router = APIRouter()
@@ -24,12 +25,18 @@ async def health_check():
 @router.post(
     path="/notifications",
     status_code=201,
-    response_model=NotificationResponseBody,
+    response_model=PostNotificationResponseBody,
     summary="Relays Notification API",
     description=(
         "Accepts email, SMS, or webhook notifications. "
         "The payload schema is selected automatically using the `channel` field."
     ),
+    responses={
+        422: {
+            "model": RequestValidationErrorModel,
+            "description": "Validation Error",
+        }
+    },
 )
 async def notify(req: NotificationRequestBody, res: Response):
     notification_id = uuid4()
@@ -50,7 +57,7 @@ async def notify(req: NotificationRequestBody, res: Response):
     # enqueue_notification(notification_id)
 
     res.headers["Location"] = f"/v1/notifications/{notification_id}"
-    return NotificationResponseBody(
+    return PostNotificationResponseBody(
         notification_id=notification_id, state=state, created_at=created_at
     )
 
@@ -63,6 +70,12 @@ async def notify(req: NotificationRequestBody, res: Response):
         "Returns the current lifecycle state and delivery metadata "
         "for a previously created notification."
     ),
+    responses={
+        422: {
+            "model": RequestValidationErrorModel,
+            "description": "Validation Error",
+        }
+    },
 )
 async def get_notify(
     notification_id: Annotated[
@@ -77,7 +90,6 @@ async def get_notify(
     #     raise HTTPException(status_code=404, detail="Notification not found")
 
     # ---- Placeholder response (until DB is wired) ----
-
     return GetNotificationResponseBody(
         notification_id=notification_id,
         channel="email",
