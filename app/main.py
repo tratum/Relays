@@ -5,16 +5,17 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from app.api.v1.routes import router as v1Router
-from app.core.config import settings
+from app.core.config import initialize_logging, settings
 from app.core.exceptions import (
     StarletteHTTPException,
+    global_exception_handler,
     http_exception_handler,
     request_validation_exception_handler,
 )
 from app.db.session import close_db, init_db
 from app.middleware.request_id import RequestIDMiddleware
 
-logging.basicConfig(level=logging.INFO)
+initialize_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -30,15 +31,30 @@ async def app_lifespan(app: FastAPI):
     # e.g., warm up DB pools, preload configs, validate connections
     # You can also attach to app.state if needed:
     # app.state.some_resource = some_client
-    logger.info("Initializing Database....")
-    await init_db()
+    # logger.info("Initializing Database....")
+    logger.info(
+        "Initializing database",
+        extra={"request_id": "system"},
+    )
+    try:
+        await init_db()
+    except Exception:
+        logger.exception(
+            "Database initialization failed. Shutting down application.",
+            extra={"request_id": "system"},
+        )
+        raise
 
     yield
     # ---- Shutdown logic here ----
     # e.g., close connections, flush buffers
     # if app.state.some_resource:
     #     await app.state.some_resource.close()
-    logger.info("Closing Database....")
+    # logger.info("Closing Database....")
+    logger.info(
+        "Closing database",
+        extra={"request_id": "system"},
+    )
     await close_db()
 
 
@@ -76,6 +92,7 @@ def create_app() -> FastAPI:
         RequestValidationError, request_validation_exception_handler
     )
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, global_exception_handler)
 
     return app
 
