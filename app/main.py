@@ -2,9 +2,11 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from app.api.v1.routes import router as v1Router
 from app.core.config import settings
+from app.core.exceptions import request_validation_exception_handler
 from app.db.session import close_db, init_db
 from app.middleware.request_id import RequestIDMiddleware
 
@@ -63,6 +65,11 @@ def create_app() -> FastAPI:
     app.include_router(
         v1Router,
         prefix="/v1",
+    )
+
+    # ---------------Exception Handlers-----------------
+    app.add_exception_handler(
+        RequestValidationError, request_validation_exception_handler
     )
 
     return app
