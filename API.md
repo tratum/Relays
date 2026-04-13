@@ -1,7 +1,5 @@
 # API Contract
 
----
-
 ## Purpose
 
 This document defines the **public HTTPS API contracts** for Relays.
@@ -18,7 +16,7 @@ This document specifies:
 
 It does **not** describe internal execution, retries, workers, or recovery.
 
----
+<br>
 
 ## Design Principles
 
@@ -30,7 +28,7 @@ It does **not** describe internal execution, retries, workers, or recovery.
 
 The API accepts _notification intent_, not delivery outcomes.
 
----
+<br>
 
 ## Transport & Security
 
@@ -43,13 +41,13 @@ https://api.relays.run
 - Plain HTTP is not supported
 - Requests over HTTP must be rejected or redirected at the load balancer / proxy layer
 - TLS termination may occur at:
-  - Reverse proxy (e.g., Nginx, Caddy)
+  - Reverse proxy (Caddy)
   - Cloud load balancer
   - API gateway
 
 **_HTTPS is required to protect notification payloads, metadata, and future authentication credentials._**
 
----
+<br>
 
 ## Base URL & Versioning
 
@@ -59,32 +57,38 @@ All endpoints are versioned under:
 https://api.relays.run/v1
 ```
 
-This Structure allows:
-
-- clean versioning
-- backwards-compatible evolution
-
----
+<br>
 
 ## Core Concepts
 
 A notification represents a delivery intent submitted by a client.
 
-- One notification targets one recipient
-- One notification uses one delivery channel
+- One notification targets **one recipient**
+- One notification uses **one delivery channel**
 - A notification progresses through a lifecycle asynchronously
 
----
+
+## Request ID
+
+Every error response includes a `request_id` field.
+
+- Type: `UUID4`
+- Generated per request
+- Used for tracing, debugging, and support
+
+Clients should log and surface this ID when reporting issues.
+
+<br>
 
 ## API Endpoints
 
 <br>
 
-### 1. Notification Creation
+### 1. `POST` Notification Creation
 
 <br>
 
-#### **Endpoint**
+#### Endpoint
 
 <br>
 
@@ -94,13 +98,21 @@ POST https://api.relays.run/v1/notifications
 
 <br>
 
-#### **Request Body**
+#### Request Body
+
+All channel-specific data (including recipient) is contained within the `payload`.
+
+
+
+**Email Example**
 
 ```json
 {
   "channel": "email",
-  "to": "user@example.com",
   "payload": {
+    "to": "user@example.com",
+    "cc": [],
+    "bcc": [],
     "subject": "Welcome",
     "body": "Hello! Welcome to Relays."
   },
@@ -110,21 +122,62 @@ POST https://api.relays.run/v1/notifications
 }
 ```
 
-| Field    | Type   | Required | Description                                          |
-| -------- | ------ | -------- | ---------------------------------------------------- |
-| channel  | string | yes      | Type of Delivery Channel (email, sms, webhook, etc.) |
-| to       | string | yes      | Channel-Specific recipient identifier                |
-| payload  | object | yes      | Channel-Specific delivery content                    |
-| metadata | object | no       | Optional client-provided metadata                    |
+---
 
-<br>
-
-#### **Channel: email (MVP)**
-
-**Email Payload Schema**
+**SMS Example**
 
 ```json
 {
+  "channel": "sms",
+  "payload": {
+    "to": "+919950649357",
+    "message": "Hello! Welcome to Relays."
+  },
+  "metadata": {
+    "source": "signup-service"
+  }
+}
+```
+
+---
+
+**Webhook Example**
+
+```json
+{
+  "channel": "webhook",
+  "payload": {
+    "url": "https://example.com/webhook",
+    "body": {
+      "event": "user.created"
+    }
+  }
+}
+```
+
+<br>
+
+#### Request Fields
+
+| Field    | Type   | Required | Description                                  |
+| -------- | ------ | -------- | -------------------------------------------- |
+| channel  | string | yes      | Delivery channel (`email`, `sms`, `webhook`) |
+| payload  | object | yes      | Channel-specific recipient and content       |
+| metadata | object | no       | Optional client-provided metadata            |
+
+
+
+#### Channel Payload Schemas
+
+---
+
+**Email Payload**
+
+```json
+{
+  "to": "string",
+  "cc": "string[]",
+  "bcc": "string[]",
   "subject": "string",
   "body": "string"
 }
@@ -132,19 +185,50 @@ POST https://api.relays.run/v1/notifications
 
 **Validation Rules**
 
+- `to`: required, valid email
+- `cc`, `bcc`: optional arrays of valid emails
 - `subject`: optional
 - `body`: required, non-empty
-- `to`: must be a valid email address
+
+---
+
+**SMS Payload**
+
+```json
+{
+  "to": "string",
+  "message": "string"
+}
+```
+
+**Validation Rules**
+
+- `to`: required, valid E.164 phone number
+- `message`: required, max length 160 characters
+
+---
+
+**Webhook Payload**
+
+```json
+{
+  "url": "string",
+  "body": "object"
+}
+```
+
+**Validation Rules**
+
+- `url`: required, valid HTTPS URL
+- `body`: required JSON object
 
 <br>
 
-#### **Response**
+#### Response
 
-<br>
+---
 
-1. **Success**
-
-<br>
+**1. Success**
 
 - Status Code
 
@@ -153,6 +237,7 @@ POST https://api.relays.run/v1/notifications
   ```
 
 - Response Body
+
   ```json
   {
     "notification_id": "a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f",
@@ -161,65 +246,61 @@ POST https://api.relays.run/v1/notifications
   }
   ```
 
-<br>
+---
 
-2. **Validation Error**
-
-<br>
+**2. Validation Error**
 
 - Status Code
+
   ```bash
   400 Bad Request
   ```
+
 - Response Body
+
   ```json
   {
     "error": {
       "code": "invalid_request",
-      "message": "Invalid email address"
+      "message": "Invalid input",
+      "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
     }
   }
   ```
 
-<br>
+---
 
-3. **Server Error**
-
-<br>
+**3. Server Error**
 
 - Status Code
+
   ```bash
   500 Internal Server Error
   ```
+
 - Response Body
 
   ```json
   {
     "error": {
       "code": "internal_error",
-      "message": "Unexpected error"
+      "message": "Unexpected error",
+      "request_id": "c9bf9e57-1685-4c89-bafb-ff5af830be8a"
     }
   }
   ```
 
-  <br>
-  <br>
+---
 
-### 2. Get Notification Status
+### 2. `GET` Notification Status
 
-<br>
-
-#### **Endpoint**
-
-<br>
+#### Endpoint
 
 ```bash
 GET https://api.relays.run/v1/notifications/{notification_id}
 ```
 
-<br>
-
-#### **Path Parameters**
+#### Path Parameters
 
 | Name            | Type | Description             |
 | --------------- | ---- | ----------------------- |
@@ -227,13 +308,11 @@ GET https://api.relays.run/v1/notifications/{notification_id}
 
 <br>
 
-#### **Response**
+#### Response
 
-<br>
+---
 
-1. **Success**
-
-<br>
+**1. Success**
 
 - Status Code
 
@@ -242,11 +321,12 @@ GET https://api.relays.run/v1/notifications/{notification_id}
   ```
 
 - Response Body
+
   ```json
   {
     "notification_id": "a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f",
     "channel": "email",
-    "to": "user@example.com",
+    "recipient": "user@example.com",
     "state": "processing",
     "attempt_count": 2,
     "max_attempts": 5,
@@ -259,16 +339,15 @@ GET https://api.relays.run/v1/notifications/{notification_id}
 
 <br>
 
-- Notes
-  - **_200 OK is returned for any existing notification regardless of its lifecycle state_** ( created, queued, processing, sent or failed).
-  - `last_error` is a concise, human-friendly summary of the most recent relevant failure. It should contain what you reliably know from the provider (never invent).
-  - Full provider responses or large blobs belong in the delivery_attempts event log (see suggestion below), not in the main GET payload, to avoid bloat and leaking internals.
+**_Notes_**
 
-<br>
+- `200 OK` is returned for any existing notification regardless of lifecycle state
+- `last_error` is a concise, human-readable failure summary
+- Detailed provider responses belong in delivery_attempt logs
 
-2. **Not Found**
+---
 
-<br>
+**2. Not Found**
 
 - Status Code
 
@@ -277,55 +356,56 @@ GET https://api.relays.run/v1/notifications/{notification_id}
   ```
 
 - Response Body
+
   ```json
   {
     "error": {
       "code": "not_found",
-      "message": "Notification not found"
+      "message": "Notification not found",
+      "request_id": "9a8b7c6d-1234-5678-9012-abcdefabcdef"
     }
   }
   ```
 
 <br>
 
----
+## Idempotency
 
-#### **Idempotency**
+- Not supported in MVP
+- Duplicate requests may create duplicate notifications
 
-- Not supported in MVP.
-- Duplicate HTTPS requests may create duplicate notifications.
 
-#### **Authentication & Authorization**
+## Authentication & Authorization
 
-- Currently Not implemented in MVP.
-- HTTPS ensures transport security only, not identity.
+- Not implemented in MVP
+- HTTPS ensures transport security only
 
-#### **Rate Limiting**
 
-- Currently Not implemented in MVP.
+## Rate Limiting
 
-#### **Delivery Guarantees**
+- Not implemented in MVP
+
+
+## Delivery Guarantees
 
 - At-least-once delivery
 - Duplicate deliveries are possible
 - No exactly-once guarantees
 
-#### **Explicit Non-Goals (MVP)**
+## Explicit Non-Goals (MVP)
 
 - No synchronous delivery
-- No bulk notifications
+- No bulk/multi-recipient notifications
 - No scheduling API
 - No cancellation API
 - No provider selection
 
----
+## Forward Compatibility Notes
 
-### Forward Compatibility Notes
-
-The HTTPS API is intentionally designed to support:
+The API is designed to support future additions:
 
 - Multiple delivery channels
-- API keys and auth headers
+- API key authentication
 - Rate limiting
 - Billing and usage tracking
 - Webhook callbacks
@@ -333,5 +413,5 @@ The HTTPS API is intentionally designed to support:
 All future changes must preserve:
 
 - Existing paths
-- Existing required fields
-- Existing response shapes
+- Required fields
+- Response structure
