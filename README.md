@@ -64,7 +64,7 @@ Create a `.env` file in the root directory:
 ```env
 ENV=dev
 VERSION=v1
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/relays
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/relays
 REDIS_URL=redis://localhost:6379/0
 ```
 ### 4. Install Dependencies
