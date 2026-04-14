@@ -67,7 +67,6 @@ A notification represents a delivery intent submitted by a client.
 - One notification uses **one delivery channel**
 - A notification progresses through a lifecycle asynchronously
 
-
 ## Request ID
 
 Every error response includes a `request_id` field.
@@ -101,8 +100,6 @@ POST https://api.relays.run/v1/notifications
 #### Request Body
 
 All channel-specific data (including recipient) is contained within the `payload`.
-
-
 
 **Email Example**
 
@@ -164,8 +161,6 @@ All channel-specific data (including recipient) is contained within the `payload
 | channel  | string | yes      | Delivery channel (`email`, `sms`, `webhook`) |
 | payload  | object | yes      | Channel-specific recipient and content       |
 | metadata | object | no       | Optional client-provided metadata            |
-
-
 
 #### Channel Payload Schemas
 
@@ -331,6 +326,7 @@ GET https://api.relays.run/v1/notifications/{notification_id}
     "attempt_count": 2,
     "max_attempts": 5,
     "created_at": "2026-01-10T14:00:00Z",
+    "updated_at": "2026-01-10T14:20:00Z",
     "last_attempt_at": "2026-01-10T14:20:00Z",
     "sent_at": null,
     "last_error": "SMTP 421 Temporary service unavailable"
@@ -374,17 +370,14 @@ GET https://api.relays.run/v1/notifications/{notification_id}
 - Not supported in MVP
 - Duplicate requests may create duplicate notifications
 
-
 ## Authentication & Authorization
 
 - Not implemented in MVP
 - HTTPS ensures transport security only
 
-
 ## Rate Limiting
 
 - Not implemented in MVP
-
 
 ## Delivery Guarantees
 

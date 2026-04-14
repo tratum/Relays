@@ -186,6 +186,10 @@ class GetNotificationResponseBody(BaseModel):
         ...,
         description="UTC timestamp when the notification was created",
     )
+    updated_at: datetime = Field(
+        ...,
+        description="UTC timestamp when the notification was last updated",
+    )
     queued_at: datetime | None = Field(
         None,
         description="UTC timestamp when the notification was queued for delivery",
@@ -205,10 +209,6 @@ class GetNotificationResponseBody(BaseModel):
     last_error: str | None = Field(
         None,
         description="Error message from the most recent failed attempt, if any",
-    )
-    updated_at: datetime = Field(
-        ...,
-        description="UTC timestamp when the notification was last updated",
     )
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")

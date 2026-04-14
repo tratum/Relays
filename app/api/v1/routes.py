@@ -13,6 +13,7 @@ from app.api.v1.schemas import (
     PostNotificationResponseBody,
     RequestValidationErrorModel,
 )
+from app.db.queries.notifications import create_notification, get_notifications
 
 router = APIRouter()
 
@@ -42,28 +43,35 @@ async def health_check():
         },
     },
 )
-async def notify(req: NotificationRequestBody, res: Response):
-    notification_id = uuid4()
-    state = NotificationState.created
-    created_at = datetime.now(timezone.utc)
+async def create_notify(req: NotificationRequestBody, res: Response):
+    # Extract recipient based on channel
+    if req.channel == "email":
+        recipient = req.payload.to
+    elif req.channel == "sms":
+        recipient = req.payload.to
+    elif req.channel == "webhook":
+        recipient = str(req.payload.url)
+    else:
+        raise ValueError("Invalid Channel")
 
     # ---- Persistence layer (DB: source of truth) ----
-    # await notifications_repo.insert(
-    #     id=notification_id,
-    #     channel=req.channel,
-    #     to=req.to,
-    #     payload=req.payload,
-    #     state=state,
-    #     created_at=created_at,
-    # )
+    result = await create_notification(
+        channel=req.channel,
+        recipient=recipient,
+        payload=req.payload.model_dump(),
+        metadata=req.metadata,
+    )
+
+    # ---- Response ----
+    res.headers["Location"] = f"/v1/notifications/{result['id']}"
+    return PostNotificationResponseBody(
+        notification_id=result["id"],
+        state=result["state"],
+        created_at=result["created_at"],
+    )
 
     # ---- Enqueue async delivery job (Redis / Celery) ----
     # enqueue_notification(notification_id)
-
-    res.headers["Location"] = f"/v1/notifications/{notification_id}"
-    return PostNotificationResponseBody(
-        notification_id=notification_id, state=state, created_at=created_at
-    )
 
 
 @router.get(
@@ -91,25 +99,20 @@ async def get_notify(
         Path(description="Notification ID returned during creation"),
     ],
 ):
-    # ---- Fetch from DB (authoritative source) ----
-    # notification = await notifications_repo.get_by_id(notification_id)
-    #
-    # if notification is None:
-    #     raise HTTPException(status_code=404, detail="Notification not found")
+    result = await get_notifications(notification_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Notification Not found")
 
-    # ---- Placeholder response (until DB is wired) ----
-    return GetNotificationResponseBody(
-        notification_id=notification_id,
-        channel="email",
-        recipient="user@example.com",
-        state=NotificationState.created,
-        attempt_count=0,
-        max_attempts=5,
-        created_at=datetime.now(timezone.utc),
-        queued_at=None,
-        last_attempt_at=None,
-        next_retry_at=None,
-        sent_at=None,
-        last_error=None,
-        updated_at=datetime.now(timezone.utc),
-    )
+    return {
+        "notification_id": result["id"],
+        "channel": result["channel"],
+        "recipient": result["recipient"],
+        "state": result["state"],
+        "attempt_count": result["attempt_count"],
+        "max_attempts": result["max_attempts"],
+        "created_at": result["created_at"],
+        "updated_at": result["updated_at"],
+        "last_attempt_at": result["last_attempt_at"],
+        "sent_at": result["sent_at"],
+        "last_error": result["last_error"],
+    }
