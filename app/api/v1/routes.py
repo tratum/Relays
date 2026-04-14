@@ -33,13 +33,13 @@ async def health_check():
     ),
     responses={
         400: {
-          "model": RequestValidationErrorModel,
-          "description": "Bad Request",
+            "model": RequestValidationErrorModel,
+            "description": "Bad Request",
         },
         422: {
             "model": RequestValidationErrorModel,
             "description": "Validation Error",
-        }
+        },
     },
 )
 async def notify(req: NotificationRequestBody, res: Response):
@@ -76,13 +76,13 @@ async def notify(req: NotificationRequestBody, res: Response):
     ),
     responses={
         400: {
-          "model": RequestValidationErrorModel,
-          "description": "Bad Request",
+            "model": RequestValidationErrorModel,
+            "description": "Bad Request",
         },
         422: {
             "model": RequestValidationErrorModel,
             "description": "Validation Error",
-        }
+        },
     },
 )
 async def get_notify(
@@ -101,7 +101,7 @@ async def get_notify(
     return GetNotificationResponseBody(
         notification_id=notification_id,
         channel="email",
-        to="user@example.com",
+        recipient="user@example.com",
         state=NotificationState.created,
         attempt_count=0,
         max_attempts=5,

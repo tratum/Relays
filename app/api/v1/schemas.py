@@ -27,6 +27,22 @@ class NotificationState(str, Enum):
 
 
 class EmailPayload(BaseModel):
+    to: str = Field(
+        ...,
+        min_length=4,
+        description="Recipient Email",
+        examples=["user@example.com"],
+    )
+    cc: list[str] | None = Field(
+        None,
+        description="List of CC email recipients",
+        examples=[["cc1@example.com", "cc2@example.com"]],
+    )
+    bcc: list[str] | None = Field(
+        None,
+        description="List of BCC email recipients",
+        examples=[["bcc1@example.com", "bcc2@example.com"]],
+    )
     subject: str | None = Field(
         None,
         max_length=255,
@@ -42,8 +58,24 @@ class EmailPayload(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
+    @field_validator("to")
+    @classmethod
+    def validate_email_recipient(cls, v: str) -> str:
+        if not re.fullmatch(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+            v,
+        ):
+            raise ValueError("Invalid email address")
+        return v
+
 
 class SMSPayload(BaseModel):
+    to: str = Field(
+        ...,
+        min_length=4,
+        description="Recipient Phone Number in E.164 format",
+        examples=["+14155552671"],
+    )
     message: str = Field(
         ...,
         min_length=1,
@@ -54,11 +86,19 @@ class SMSPayload(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
+    @field_validator("to")
+    @classmethod
+    def validate_phone_number(cls, v: str) -> str:
+        # E.164-like format
+        if not re.fullmatch(r"\+?[1-9]\d{7,14}", v):
+            raise ValueError("Invalid phone number")
+        return v
+
 
 class WebhookPayload(BaseModel):
     url: AnyUrl = Field(
         ...,
-        description="Webhook endpoint URL",
+        description="A Valid Webhook endpoint URL",
         examples=["https://example.com/webhook"],
     )
     body: dict[str, Any] = Field(
@@ -69,6 +109,15 @@ class WebhookPayload(BaseModel):
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
+    # Currently Redundant as there is no 'to' field
+    #  @field_validator("to")
+    # @classmethod
+    # def validate_webhook_target(cls, v: str) -> str:
+    #     # Logical identifier or service name
+    #     if not re.fullmatch(r"[a-zA-Z0-9_-]{3,50}", v):
+    #         raise ValueError("Invalid webhook recipient identifier")
+    #     return v
+
 
 # ----------------------------
 # Base request Schemas
@@ -76,17 +125,12 @@ class WebhookPayload(BaseModel):
 
 
 class BaseNotificationRequest(BaseModel):
-    to: str = Field(
-        ...,
-        min_length=1,
-        description="Channel-specific recipient identifier",
-        examples=["user@example.com", "+14155552671", "billing-service"],
-    )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Optional metadata for tracing or auditing",
         examples=[{"source": "signup-service"}],
     )
+
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
 
@@ -109,6 +153,7 @@ class PostNotificationResponseBody(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC creation time (RFC3339)",
     )
+
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
 
@@ -121,7 +166,7 @@ class GetNotificationResponseBody(BaseModel):
         ...,
         description="Delivery channel for the notification",
     )
-    to: str = Field(
+    recipient: str = Field(
         ...,
         description="Recipient identifier for the selected channel",
     )
@@ -165,17 +210,32 @@ class GetNotificationResponseBody(BaseModel):
         ...,
         description="UTC timestamp when the notification was last updated",
     )
+
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
 
 
 class RequestValidationErrorDetails(BaseModel):
-    code: str
-    message: str
-    request_id: str
+    code: str = Field(
+        ..., description="Error Code", examples=["invalid_request"]
+    )
+    message: str = Field(
+        ...,
+        description="A human-readable explanation of what went wrong.",
+        examples=[
+            "The 'email' field is required and must be a valid email address."
+        ],
+    )
+    request_id: UUID4 = Field(
+        ...,
+        description="A unique identifier for the request, used for tracing and debugging.",
+        examples=["550e8400-e29b-41d4-a716-446655440000"],
+    )
 
 
 class RequestValidationErrorModel(BaseModel):
-    error: RequestValidationErrorDetails
+    error: RequestValidationErrorDetails = Field(
+        ..., description="Error Details"
+    )
 
 
 # ----------------------------
@@ -190,16 +250,6 @@ class EmailNotificationRequest(BaseNotificationRequest):
     )
     payload: EmailPayload
 
-    @field_validator("to")
-    @classmethod
-    def validate_email_recipient(cls, v: str) -> str:
-        if not re.fullmatch(
-            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-            v,
-        ):
-            raise ValueError("Invalid email address")
-        return v
-
 
 class SMSNotificationRequest(BaseNotificationRequest):
     channel: Literal["sms"] = Field(
@@ -208,14 +258,6 @@ class SMSNotificationRequest(BaseNotificationRequest):
     )
     payload: SMSPayload
 
-    @field_validator("to")
-    @classmethod
-    def validate_phone_number(cls, v: str) -> str:
-        # E.164-like format
-        if not re.fullmatch(r"\+?[1-9]\d{7,14}", v):
-            raise ValueError("Invalid phone number")
-        return v
-
 
 class WebhookNotificationRequest(BaseNotificationRequest):
     channel: Literal["webhook"] = Field(
@@ -223,14 +265,6 @@ class WebhookNotificationRequest(BaseNotificationRequest):
         description="Webhook notification channel",
     )
     payload: WebhookPayload
-
-    @field_validator("to")
-    @classmethod
-    def validate_webhook_target(cls, v: str) -> str:
-        # Logical identifier or service name
-        if not re.fullmatch(r"[a-zA-Z0-9_-]{3,50}", v):
-            raise ValueError("Invalid webhook recipient identifier")
-        return v
 
 
 # ----------------------------

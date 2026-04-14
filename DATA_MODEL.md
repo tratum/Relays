@@ -1,27 +1,21 @@
 # Data Model
 
----
-
-This Document defines the Persistent Data Model for **_Relays_**.
+This Document defines the Persistent Data Model for ***Relays***.
 
 **PostgresSQL is the Source of Truth** for all notification states
 
 The DB consists of Two core tables:
 
-- **notifications** — current state and scheduling summary (the entity)
+* **notifications** — current state and scheduling summary (the entity)
 
-- **delivery_attempts** — append-only history of attempts (the events)
-
----
+* **delivery_attempts** — append-only history of attempts (the events)
 
 ## Notifications Table
 
-<br>
-
 ### **Purpose**
 
-    - Stores Notifications and their lifecycle state
-    - Stores Retry Count and Scheduling Information
+  - Stores Notifications and their lifecycle state
+  - Stores Retry Count and Scheduling Information
 
 ### **Columns**
 
@@ -30,9 +24,9 @@ The DB consists of Two core tables:
 | Column          | Type                                            | Default / Nullable | Description                                          |
 | --------------- | ----------------------------------------------- | ------------------ | ---------------------------------------------------- |
 | id              | uuid                                            | NOT NULL           | Primary key for the notification                     |
-| to              | text                                            | NOT NULL           | Recipient email address                              |
-| subject         | text                                            | NULL               | Email subject                                        |
-| body            | text                                            | NULL               | Email body                                           |
+| channel         | text                                            | NOT NULL           | Delivery channel (`email`, `sms`, `webhook`)         |
+| recipient       | text                                            | NOT NULL           | Channel-specific recipient identifier                |
+| payload         | jsonb                                           | NOT NULL           | Channel-specific delivery content                    |
 | state           | enum(created, queued, processing, sent, failed) | created            | Current lifecycle state                              |
 | attempt_count   | integer                                         | 0                  | Number of delivery attempts made                     |
 | max_attempts    | integer                                         | 5                  | Maximum allowed delivery attempts                    |
@@ -61,71 +55,65 @@ The DB consists of Two core tables:
 
 What does `created` means ?
 
-- The API has validated the request
-- The notfication record has been written in DB
-- Redis may or may not have a corresponding job yet
+* The API has validated the request
+* The notification record has been written in DB
+* Redis may or may not have a corresponding job yet
 
 What does `queued` mean ?
 
-- The system has scheduled work
-- No worker has claimed responsibility yet
+* The system has scheduled work
+* No worker has claimed responsibility yet
 
 What does `processing` mean ?
 
-- A worker has authoritatively claimed the notification
-- Work is in progress
-- This claim is durable
-
-<br>
+* A worker has authoritatively claimed the notification
+* Work is in progress
+* This claim is durable
 
 ### **Ownership**:
 
-- **API**
-  - Creates notification
-  - Enqueues first job
+* **API**
 
-- **Worker**
-  - Updates lifecycle state
-  - Attempts retry and Increments attempt count
-  - Calculates backoff and retry scheduling
-  - Writes terminal states (Terminal States are SENT and FAILED)
+  * Creates notification
+  * Enqueues first job
 
-<br>
+* **Worker**
 
-### **_Sample Data_**
-
-| Column          | Value                                  |
-| --------------- | -------------------------------------- |
-| id              | a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f   |
-| to              | user@example.com                       |
-| subject         | Welcome                                |
-| body            | Hello! Welcome to Relays.              |
-| state           | processing                             |
-| attempt_count   | 2                                      |
-| max_attempts    | 5                                      |
-| next_retry_at   | 2026-01-10T15:30:00+05:30              |
-| queued_at       | 2026-01-10T14:10:00+05:30              |
-| last_attempt_at | 2026-01-10T14:20:00+05:30              |
-| last_error      | SMTP 421 Temporary service unavailable |
-| sent_at         | NULL                                   |
-| created_at      | 2026-01-10T14:00:00+05:30              |
-| updated_at      | 2026-01-10T14:20:00+05:30              |
-| metadata        | {"source":"signup-service"}            |
+  * Updates lifecycle state
+  * Attempts retry and Increments attempt count
+  * Calculates backoff and retry scheduling
+  * Writes terminal states (Terminal States are SENT and FAILED)
 
 <br>
 
----
+### ***Sample Data***
+
+| Column          | Value                                                    |
+| --------------- | -------------------------------------------------------- |
+| id              | a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f                     |
+| channel         | email                                                    |
+| recipient       | [user@example.com](mailto:user@example.com)              |
+| payload         | {"subject":"Welcome","body":"Hello! Welcome to Relays."} |
+| state           | processing                                               |
+| attempt_count   | 2                                                        |
+| max_attempts    | 5                                                        |
+| next_retry_at   | 2026-01-10T15:30:00+05:30                                |
+| queued_at       | 2026-01-10T14:10:00+05:30                                |
+| last_attempt_at | 2026-01-10T14:20:00+05:30                                |
+| last_error      | SMTP 421 Temporary service unavailable                   |
+| sent_at         | NULL                                                     |
+| created_at      | 2026-01-10T14:00:00+05:30                                |
+| updated_at      | 2026-01-10T14:20:00+05:30                                |
+| metadata        | {"source":"signup-service"}                              |
+
+<br>
 
 ## Delivery Attempts Table
 
-<br>
-
 ### **Purpose**
 
-    - Stores immutable records of delivery attempt
-    - Stores failure metadata and success/failure lifecycle states
-
-<br>
+  - Stores immutable records of delivery attempt
+  - Stores failure metadata and success/failure lifecycle states
 
 ### **Columns**
 
@@ -139,7 +127,7 @@ What does `processing` mean ?
 | status            | enum(success, temporary_failure, permanent_failure) | NOT NULL           | Outcome of attempt                          |
 | error_message     | text                                                | NULL               | Failure reason                              |
 | provider_response | jsonb                                               | NULL               | Raw provider response                       |
-| created_at        | timestamptz                                         | now()              | Time when attempt occurred                  |
+| created_at        | timestamptz                                         | NOT NULL, now()              | Time when attempt occurred                  |
 
 <br>
 
@@ -150,7 +138,7 @@ What does `processing` mean ?
 
 <br>
 
-### **_Sample Data_**
+### ***Sample Data***
 
 **Attempt 1**
 
@@ -184,8 +172,6 @@ What does `processing` mean ?
 
 <br>
 
----
-
 ## **Indexes & Constraints**
 
 - `notifications.id` - PRIMARY KEY
@@ -193,10 +179,12 @@ What does `processing` mean ?
 - FOREIGN KEY `delivery_attempts.notification_id` REFERENCES `notifications.id` and ON DELETE RESTRICT is selected to preserve delivery history (meaning we can't delete a notification if it has delivery attempts left).
 - `delivery_attempts.notification_id` and `delivery_attempts.attempt_number` should be UNIQUE
 - INDEX on `notifications.state`
+- INDEX on `notifications.channel`
 - PARTIAL INDEX on `notifications.next_retry_at` (Create Index on next_retry_at where state is created queued or processing as sent or failed doesn't need retries)
 - INDEX on `delivery_attempts.notification_id`
 - INDEX on `notifications.created_at` (optional, can be used for listing)
 - CONSTRAINTS:
+
   - CHECK (attempt_count >= 0)
   - CHECK (max_attempts >= 0)
   - CHECK (attempt_number >= 1) on delivery_attempts
