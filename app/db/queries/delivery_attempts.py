@@ -18,7 +18,7 @@ async def succesfull_delivery_attempt(
         query,
         notification_id,
         attempt_number,
-        provider_response if provider_response else None,
+        provider_response,
     )
 
 

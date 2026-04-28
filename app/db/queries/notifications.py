@@ -16,7 +16,7 @@ async def create_notification(
         channel,
         recipient,
         payload,
-        metadata if metadata else None,
+        metadata,
     )
 
     if row is None:
@@ -64,8 +64,7 @@ async def mark_sent(conn, notification_id):
     SET state = 'sent',
         sent_at = now(),
         updated_at = now(),
-        last_attempt_at = now(),
-        attempt_count = attempt_count + 1
+        last_attempt_at = now()
     WHERE id = $1;
     """
     await conn.execute(
@@ -79,7 +78,6 @@ async def mark_failed(conn, notification_id, error):
     UPDATE notifications
     SET state = 'failed',
         last_error = $2,
-        attempt_count = attempt_count + 1,
         last_attempt_at = now(),
         updated_at = now()
     WHERE id = $1;
@@ -87,19 +85,23 @@ async def mark_failed(conn, notification_id, error):
     await conn.execute(query, notification_id, error)
 
 
-async def schedule_retry(conn, notification_id, next_retry, error):
-    query = """
-    UPDATE notifications
-    SET attempt_count = attempt_count + 1,
-        next_retry_at = $2,
-        last_error = $3,
-        state = 'queued',
-        queued_at = now(),
-        last_attempt_at = now(),
-        updated_at = now()
-    WHERE id = $1
-    """
-    await conn.execute(query, notification_id, next_retry, error)
+## Deprecated: This function was used for DB-driven retry scheduling (next_retry_at model).
+# Retries are now fully managed by Celery with exponential backoff.
+# Do not use this function to avoid double incrementing attempt_count and inconsistent state.
+
+# async def schedule_retry(conn, notification_id, next_retry, error):
+#     query = """
+#     UPDATE notifications
+#     SET attempt_count = attempt_count + 1,
+#         next_retry_at = $2,
+#         last_error = $3,
+#         state = 'queued',
+#         queued_at = now(),
+#         last_attempt_at = now(),
+#         updated_at = now()
+#     WHERE id = $1
+#     """
+#     await conn.execute(query, notification_id, next_retry, error)
 
 
 async def increment_attempt_count(conn, notification_id) -> int:
