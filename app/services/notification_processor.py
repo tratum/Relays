@@ -5,6 +5,7 @@ from app.db.queries.delivery_attempts import (
 )
 from app.db.queries.notifications import (
     get_notification,
+    increment_attempt_count,
     mark_failed,
     mark_processing,
     mark_sent,
@@ -43,14 +44,17 @@ async def process_notification(notification_id: str):
 
     # Succesful Notification Delivery
     try:
-        attempt_number = claimed["attempt_count"] + 1
+        attempt_count = claimed["attempt_count"] + 1
         provider_response = await MailProvider.send(
             claimed,
-            attempt_number,
+            attempt_count,
         )
 
         async with pool.acquire() as conn:
             async with conn.transaction():
+                attempt_number = await increment_attempt_count(
+                    conn, notification_id
+                )
                 await succesfull_delivery_attempt(
                     conn,
                     notification_id,
@@ -62,12 +66,14 @@ async def process_notification(notification_id: str):
 
     # Failed Notification Delivery
     except Exception as e:
-        attempt_number = claimed["attempt_count"] + 1
         error_message = str(e)
         can_retry = MailProvider.can_retry(e, claimed)
 
         async with pool.acquire() as conn:
             async with conn.transaction():
+                attempt_number = await increment_attempt_count(
+                    conn, notification_id
+                )
                 await failed_delivery_attempt(
                     conn,
                     notification_id,

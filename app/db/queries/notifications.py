@@ -100,3 +100,18 @@ async def schedule_retry(conn, notification_id, next_retry, error):
     WHERE id = $1
     """
     await conn.execute(query, notification_id, next_retry, error)
+
+
+async def increment_attempt_count(conn, notification_id) -> int:
+    query = """
+    UPDATE notifications
+    SET attempt_count = attempt_count + 1,
+        last_attempt_at = now(),
+        updated_at = now()
+    WHERE id = $1
+    RETURNING attempt_count;
+    """
+    row = await conn.fetchrow(query, notification_id)
+    if not row:
+        raise RuntimeError(f"Notification {notification_id} not found")
+    return row["attempt_count"]
