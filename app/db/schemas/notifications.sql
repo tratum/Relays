@@ -1,12 +1,6 @@
-CREATE TYPE notification_state AS ENUM (
-  'created',
-  'queued',
-  'processing',
-  'sent',
-  'failed'
-);
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   channel TEXT NOT NULL,
   recipient TEXT NOT NULL,
@@ -52,19 +46,19 @@ CREATE TABLE notifications (
     CHECK(updated_at >= created_at),
   CONSTRAINT recipient_not_empty
     CHECK (length(recipient) > 0)
-  
+
   );
 
 -- INDEXES
-CREATE INDEX idx_notification_state
+CREATE INDEX IF NOT EXISTS idx_notification_state
 ON notifications(state);
 
-CREATE INDEX idx_notification_channel
+CREATE INDEX IF NOT EXISTS idx_notification_channel
 ON notifications(channel);
 
-CREATE INDEX idx_notification_created
+CREATE INDEX IF NOT EXISTS idx_notification_created
 ON notifications(created_at);
 
-CREATE INDEX idx_notification_retry
+CREATE INDEX IF NOT EXISTS idx_notification_retry
 ON notifications(next_retry_at)
 WHERE state IN ('created', 'queued', 'processing');

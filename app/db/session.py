@@ -3,6 +3,7 @@ import json
 import asyncpg
 
 from app.core.config import config
+from app.db.migration_runner import run_migrations
 
 # Global Connection Pool
 pool: asyncpg.Pool | None = None
@@ -36,13 +37,14 @@ async def init_db():
         max_size=10,
         command_timeout=60,
         max_inactive_connection_lifetime=300,
-        init=setup_connection,
+        init=setup_connection,  ## Runs Per-Connection
     )
 
     # Warming Up DB Pools
     async with pool.acquire() as conn:
         await conn.execute("SELECT 1")
         await conn.fetch("SELECT NOW()")
+        await run_migrations(conn)
 
 
 async def close_db():

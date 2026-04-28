@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:18
+    container_name: relays-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: relays
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql:z
+
+  pgadmin:
+    image: docker.io/dpage/pgadmin4:latest
+    container_name: relays-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@test.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data/pgadmin:/var/lib/pgadmin:z
+    depends_on:
+      - postgres
+
+  redis:
+    image: docker.io/library/redis:8
+    container_name: relays-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data:z
+
+  redis-insight:
+    image: docker.io/redis/redisinsight:latest
+    container_name: relays-redis-insight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    volumes:
+      - ./data/redis-insight:/db:z
+    depends_on:
+      - redis
+
+  api:
+    build: .
+    container_name: relays-api
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app:z
+      - /app/.venv
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env.podman
+
+  worker:
+    build: .
+    container_name: relays-worker
+    command: uv run celery -A app.workers.celery.celery_conn worker -Q email -l info -E
+    volumes:
+      - .:/app:z
+      - /app/.venv
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env.podman
