@@ -142,4 +142,5 @@ async def get_notify(
             "last_attempt_at": result["last_attempt_at"],
             "sent_at": result["sent_at"],
             "last_error": result["last_error"],
+            "queued_at": result["queued_at"],
         }

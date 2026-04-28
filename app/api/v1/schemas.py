@@ -198,10 +198,10 @@ class GetNotificationResponseBody(BaseModel):
         None,
         description="UTC timestamp of the most recent delivery attempt",
     )
-    next_retry_at: datetime | None = Field(
-        None,
-        description="UTC timestamp when the next retry is scheduled, if applicable",
-    )
+    # next_retry_at: datetime | None = Field(
+    #     None,
+    #     description="UTC timestamp when the next retry is scheduled, if applicable",
+    # )
     sent_at: datetime | None = Field(
         None,
         description="UTC timestamp when the notification was successfully delivered",
