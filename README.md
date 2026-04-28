@@ -18,9 +18,9 @@ Relays is built as a backend platform component with a strong focus on **correct
 
 Relays is intended for:
 
-* Backend engineers building internal services and distributed systems
-* Small teams needing a simple, reliable notification backend
-* Developers integrating asynchronous email delivery into their applications
+- Backend engineers building internal services and distributed systems
+- Small teams needing a simple, reliable notification backend
+- Developers integrating asynchronous email delivery into their applications
 
 > This system is **not intended for end users or non-technical customers**.
 
@@ -30,16 +30,16 @@ Relays is intended for:
 
 Relays follows a set of core design principles:
 
-* **API-first**
+- **API-first**
   All functionality is exposed through clear and consistent HTTP APIs.
 
-* **Minimal abstractions**
+- **Minimal abstractions**
   Avoids unnecessary layers to maintain simplicity and predictability.
 
-* **Explicit state transitions**
+- **Explicit state transitions**
   Every notification moves through well-defined and observable states.
 
-* **Failures as first-class citizens**
+- **Failures as first-class citizens**
   Errors are expected, tracked, and handled systematically rather than hidden.
 
 ---
@@ -52,8 +52,8 @@ Notifications are modeled as a generic delivery intent with a `channel` and `pay
 
 The system ensures that:
 
-* Core processing (queueing, retries, state transitions) is **independent of channel**
-* Channel-specific logic is isolated and can be extended without changing core components
+- Core processing (queueing, retries, state transitions) is **independent of channel**
+- Channel-specific logic is isolated and can be extended without changing core components
 
 > Email is the first implemented channel, not a special case.
 
@@ -61,12 +61,12 @@ The system ensures that:
 
 ## Key Capabilities
 
-* Asynchronous notification processing
-* Durable persistence before execution
-* Retry handling with backoff
-* Delivery attempt tracking
-* Explicit lifecycle state management
-* At-least-once delivery guarantees
+- Asynchronous notification processing
+- Durable persistence before execution
+- Retry handling with backoff
+- Delivery attempt tracking
+- Explicit lifecycle state management
+- At-least-once delivery guarantees
 
 ---
 
@@ -85,12 +85,12 @@ The system ensures that:
 
 Detailed system design and behavior are documented separately:
 
-* [API Contract](docs/API.md)
-* [Architecture](docs/ARCHITECTURE.md)
-* [Data Model](docs/DATA_MODEL.md)
-* [Worker Model](docs/WORKERS.md)
-* [Recovery Model](docs/RECOVERY.md)
-* [Product Requirements](docs/PRD.md)
+- [API Contract](docs/API.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Data Model](docs/DATA_MODEL.md)
+- [Worker Model](docs/WORKERS.md)
+- [Recovery Model](docs/RECOVERY.md)
+- [Product Requirements](docs/PRD.md)
 
 ---
 
@@ -126,7 +126,13 @@ REDIS_URL=redis://localhost:6379/0
 uv sync
 ```
 
-### 5. Run the Application
+### 5. Run Celery Workers
+
+```bash
+celery -A app.workers.celery.celery_conn worker --loglevel=info -Q email
+```
+
+### 6. Run the Application
 
 ```bash
 uv run uvicorn app.main:app --reload
@@ -136,11 +142,11 @@ uv run uvicorn app.main:app --reload
 
 ## Roadmap (Post-MVP)
 
-* API key authentication
-* Rate limiting and abuse protection
-* Usage tracking and billing
-* Additional channels (SMS, webhooks)
-* Webhook callbacks for delivery status
+- API key authentication
+- Rate limiting and abuse protection
+- Usage tracking and billing
+- Additional channels (SMS, webhooks)
+- Webhook callbacks for delivery status
 
 ---
 

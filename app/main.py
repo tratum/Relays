@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
 from app.api.v1.routes import router as v1Router
-from app.core.config import initialize_logging, settings
+from app.core.config import config, initialize_logging
 from app.core.exceptions import (
     StarletteHTTPException,
     global_exception_handler,
@@ -72,8 +72,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Relays",
         description="API-First Notification Delivery Platform",
-        version=settings.VERSION,
-        docs_url="/docs" if settings.ENABLE_DOCS else None,
+        version=config.VERSION,
+        docs_url="/docs" if config.ENABLE_DOCS else None,
         redoc_url=None,
         lifespan=app_lifespan,
     )
