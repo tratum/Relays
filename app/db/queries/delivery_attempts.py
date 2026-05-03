@@ -33,8 +33,12 @@ async def failed_delivery_attempt(
       status,
       error_message
     )
-    VALUES (gen_random_uuid(), $1, $2, $3, $4)
+    VALUES (gen_random_uuid(), $1, $2, $3, $4);
     """
     await conn.execute(
-        query, notification_id, attempt_number, status, error_message
+        query,
+        notification_id,
+        attempt_number,
+        status,
+        error_message,
     )

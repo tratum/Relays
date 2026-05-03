@@ -27,7 +27,7 @@ async def create_notification(
 
 async def get_notification(conn, notification_id):
     row = await conn.fetchrow(
-        "SELECT * FROM notifications WHERE id = $1",
+        "SELECT * FROM notifications WHERE id = $1;",
         notification_id,
     )
     return dict(row) if row else None
@@ -55,7 +55,10 @@ async def mark_queued(conn, notification_id):
     WHERE id = $1
     AND state IN ('created', 'processing');
     """
-    await conn.execute(query, notification_id)
+    await conn.execute(
+        query,
+        notification_id,
+    )
 
 
 async def mark_sent(conn, notification_id):
@@ -82,7 +85,11 @@ async def mark_failed(conn, notification_id, error):
         updated_at = now()
     WHERE id = $1;
     """
-    await conn.execute(query, notification_id, error)
+    await conn.execute(
+        query,
+        notification_id,
+        error,
+    )
 
 
 ## Deprecated: This function was used for DB-driven retry scheduling (next_retry_at model).
@@ -113,7 +120,10 @@ async def increment_attempt_count(conn, notification_id) -> int:
     WHERE id = $1
     RETURNING attempt_count;
     """
-    row = await conn.fetchrow(query, notification_id)
+    row = await conn.fetchrow(
+        query,
+        notification_id,
+    )
     if not row:
         raise RuntimeError(f"Notification {notification_id} not found")
     return row["attempt_count"]

@@ -9,6 +9,7 @@ async def run_base_schema(conn):
         "types.sql",
         "notifications.sql",
         "delivery_attempts.sql",
+        "idempotency_keys.sql",
     ]
     for name in order:
         file = SCHEMA_DIR / name
@@ -17,19 +18,21 @@ async def run_base_schema(conn):
 
 async def run_migrations(conn):
     # 1. Create schema_version table
-    await conn.execute("""
+    await conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS schema_version (
             version INT PRIMARY KEY
-        )
-    """)
+        );
+        """
+    )
 
     # 2. Check current version
-    version = await conn.fetchval("SELECT version FROM schema_version LIMIT 1")
+    version = await conn.fetchval("SELECT version FROM schema_version LIMIT 1;")
 
     # 3. Fresh DB → run base schema
     if version is None:
         await run_base_schema(conn)
-        await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+        await conn.execute("INSERT INTO schema_version (version) VALUES (1);")
         version = 1
 
     # 4. Apply migrations
@@ -43,7 +46,7 @@ async def run_migrations(conn):
                 await conn.execute(file.read_text())
 
                 await conn.execute(
-                    "UPDATE schema_version SET version = $1", migration_version
+                    "UPDATE schema_version SET version = $1;", migration_version
                 )
 
             version = migration_version
