@@ -3,7 +3,7 @@ import json
 import asyncpg
 
 from app.core.config import config
-from app.db.migration_runner import run_migrations
+from app.infra.db.migration_runner import run_migrations
 
 # Global Connection Pool
 pool: asyncpg.Pool | None = None

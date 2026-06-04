@@ -1,6 +1,6 @@
 import asyncio
 
-from app.db.session import init_db
+from app.infra.db.session import init_db
 
 _loop = None
 _initialized = False

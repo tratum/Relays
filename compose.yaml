@@ -65,7 +65,7 @@ services:
   worker:
     build: .
     container_name: relays-worker
-    command: uv run celery -A app.workers.celery.celery_conn worker -Q email -l info -E
+    command: uv run celery -A app.infra.workers.celery.celery_conn worker -Q email -l info -E
     volumes:
       - .:/app:z
       - /app/.venv

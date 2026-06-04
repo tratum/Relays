@@ -1,4 +1,4 @@
-async def succesfull_delivery_attempt(
+async def succesful_delivery_attempt(
     conn,
     notification_id,
     attempt_number,

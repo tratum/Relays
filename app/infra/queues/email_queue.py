@@ -1,4 +1,4 @@
-from app.workers.tasks import send_email_task
+from app.infra.workers.tasks import send_email_task
 
 
 class EmailQueue:

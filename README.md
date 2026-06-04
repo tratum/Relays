@@ -248,7 +248,7 @@ Ensure:
 #### 5. Run Worker
 
 ```bash
-uv run celery -A app.workers.celery.celery_conn worker -Q email -l info -E
+uv run celery -A app.infra.workers.celery.celery_conn worker -Q email -l info -E
 ```
 
 #### 6. Run API
