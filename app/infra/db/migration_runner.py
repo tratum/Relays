@@ -1,7 +1,7 @@
 from pathlib import Path
 
-SCHEMA_DIR = Path("app/db/schemas")
-MIGRATIONS_DIR = Path("app/db/migrations")
+SCHEMA_DIR = Path("app/infra/db/schemas")
+MIGRATIONS_DIR = Path("app/infra/db/migrations")
 
 
 async def run_base_schema(conn):

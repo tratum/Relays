@@ -1,15 +1,15 @@
-from app.services.notification_processor import (
+from app.infra.workers.celery import celery_conn
+from app.infra.workers.runtime import async_to_sync
+from app.modules.notifications.workflows.notification_delivery import (
     PermanentFailureException,
-    process_notification,
+    deliver_notification,
 )
-from app.workers.celery import celery_conn
-from app.workers.runtime import async_to_sync
 
 
 @celery_conn.task(bind=True, max_retries=5)
 def send_email_task(self, notification_id: str):
     try:
-        return async_to_sync(process_notification(notification_id))
+        return async_to_sync(deliver_notification(notification_id))
 
     # Do NOT retry
     except PermanentFailureException:

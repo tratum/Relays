@@ -8,7 +8,7 @@ celery_conn = Celery(
     backend=config.REDIS_URL,
 )
 
-celery_conn.autodiscover_tasks(["app.workers"])
+celery_conn.autodiscover_tasks(["app.infra.workers"])
 
 celery_conn.conf.update(
     task_serializer="json",
@@ -21,6 +21,6 @@ celery_conn.conf.update(
     task_track_started=True,
     broker_transport_options={"visibility_timeout": 3600},
     task_routes={
-        "app.workers.tasks.send_email_task": {"queue": "email"},
+        "app.infra.workers.tasks.send_email_task": {"queue": "email"},
     },
 )

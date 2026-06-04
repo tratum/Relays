@@ -1,5 +1,7 @@
 # API Contract
 
+---
+
 ## Purpose
 
 This document defines the **public HTTPS API contracts** for Relays.
