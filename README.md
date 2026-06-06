@@ -188,26 +188,35 @@ DATABASE_URL=postgresql://postgres:postgres@postgres:5432/relays
 REDIS_URL=redis://redis:6379/0
 ```
 
-#### 3. Start Services
+#### 3. Prepare pgAdmin Data Directory
+
+Required for rootless Podman so pgAdmin can write to its data volume.
+
+```bash
+mkdir -p ./data/pgadmin
+podman unshare chown -R 5050:5050 ./data/pgadmin
+```
+
+#### 4. Start Services
 
 ```bash
 podman compose up -d --build
 ```
 
-#### 4. Access Services
+#### 5. Access Services
 
 - API Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 - pgAdmin: [http://localhost:8080](http://localhost:8080)
 - Redis Insight: [http://localhost:5540](http://localhost:5540)
 
-#### 5. View Logs
+#### 6. View Logs
 
 ```bash
 podman compose logs -f api
 podman compose logs -f worker
 ```
 
-#### 6. Stop Services
+#### 7. Stop Services
 
 ```bash
 podman compose down

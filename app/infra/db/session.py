@@ -31,6 +31,15 @@ async def init_db():
     if pool is not None:
         return  # already intialised
 
+    # Run migrations first
+    conn = await asyncpg.connect(config.DATABASE_URL)
+    try:
+        await setup_connection(conn)
+        await run_migrations(conn)
+    finally:
+        await conn.close()
+
+    # Creating Pool after running migrations
     pool = await asyncpg.create_pool(
         dsn=config.DATABASE_URL,
         min_size=5,
@@ -43,8 +52,6 @@ async def init_db():
     # Warming Up DB Pools
     async with pool.acquire() as conn:
         await conn.execute("SELECT 1")
-        await conn.fetch("SELECT NOW()")
-        await run_migrations(conn)
 
 
 async def close_db():
