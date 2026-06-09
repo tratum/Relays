@@ -1,9 +1,11 @@
 import logging
+from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ExceptionHandler
 
 from app.core.errors import build_error
 
@@ -105,12 +107,12 @@ async def global_exception_handler(
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         RequestValidationError,
-        request_validation_exception_handler,
+        cast(ExceptionHandler, request_validation_exception_handler),
     )
 
     app.add_exception_handler(
         StarletteHTTPException,
-        http_exception_handler,
+        cast(ExceptionHandler, http_exception_handler),
     )
 
     app.add_exception_handler(

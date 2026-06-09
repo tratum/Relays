@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import (
     UUID4,
@@ -91,3 +91,31 @@ class GetNotificationResponseBody(BaseModel):
     )
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")
+
+
+def build_post_response(
+    row: dict[str, Any],
+) -> PostNotificationResponseBody:
+    return PostNotificationResponseBody(
+        notification_id=row["id"],
+        created_at=row["created_at"],
+    )
+
+
+def build_get_response(
+    row: dict[str, Any],
+) -> GetNotificationResponseBody:
+    return GetNotificationResponseBody(
+        notification_id=row["id"],
+        channel=row["channel"],
+        recipient=row["recipient"],
+        state=row["state"],
+        attempt_count=row["attempt_count"],
+        max_attempts=row["max_attempts"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        queued_at=row["queued_at"],
+        last_attempt_at=row["last_attempt_at"],
+        sent_at=row["sent_at"],
+        last_error=row["last_error"],
+    )

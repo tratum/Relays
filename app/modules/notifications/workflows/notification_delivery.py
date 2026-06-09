@@ -1,19 +1,20 @@
 from app.infra.db.session import get_pool
-from app.modules.notifications.constants import (
+
+from ..constants import (
     NotificationState,
 )
-from app.modules.notifications.db.delivery_attempts_queries import (
+from ..db.delivery_attempts_queries import (
     failed_delivery_attempt,
     succesful_delivery_attempt,
 )
-from app.modules.notifications.db.notification_queries import (
+from ..db.notification_queries import (
     get_notification,
     increment_attempt_count,
     mark_failed,
     mark_processing,
     mark_sent,
 )
-from app.modules.notifications.providers.email import (
+from ..providers.email import (
     MailProvider,
 )
 

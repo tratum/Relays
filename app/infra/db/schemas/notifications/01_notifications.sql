@@ -1,5 +1,3 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   channel TEXT NOT NULL,
@@ -22,28 +20,34 @@ CREATE TABLE IF NOT EXISTS notifications (
     CHECK (
       channel IN ('email','sms','webhook')
     ),
+
   CONSTRAINT chk_attempt_bounds
     CHECK (
       attempt_count >= 0
       AND max_attempts > 0
       AND attempt_count <= max_attempts
     ),
+
   CONSTRAINT chk_sent_at_timestamp
     CHECK (
       (state = 'sent' AND sent_at IS NOT NULL)
       OR
       (state <> 'sent')
     ),
+
   CONSTRAINT chk_payload_is_object
     CHECK(jsonb_typeof(payload) = 'object'),
+
   CONSTRAINT chk_timestamp_sanity
     CHECK (
       (last_attempt_at IS NULL OR last_attempt_at >= created_at)
       AND
       (sent_at IS NULL OR sent_at >= created_at)
     ),
+
   CONSTRAINT chk_update_after_created
     CHECK(updated_at >= created_at),
+
   CONSTRAINT recipient_not_empty
     CHECK (length(recipient) > 0)
 
