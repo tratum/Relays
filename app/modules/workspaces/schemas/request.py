@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.modules.workspaces.validators import (
+from ..schemas.validators import (
     UserName,
     WorkspaceName,
 )

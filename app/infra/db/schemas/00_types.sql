@@ -48,7 +48,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_type WHERE typname = 'workspace_member_role'
     ) THEN
-        CREATE TYPE delivery_status AS ENUM (
+        CREATE TYPE workspace_member_role AS ENUM (
             'OWNER',
             'MEMBER'
         );
@@ -64,10 +64,26 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_type WHERE typname = 'workspace_status'
     ) THEN
-        CREATE TYPE delivery_status AS ENUM (
+        CREATE TYPE workspace_status AS ENUM (
             'ACTIVE',
             'SUSPENDED',
             'DELETED'
+        );
+    END IF;
+END
+$$;
+
+-- =========================
+-- ENUM: api_key_status
+-- =========================
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type WHERE typname = 'api_key_status'
+    ) THEN
+        CREATE TYPE api_key_status AS ENUM (
+            'active',
+            'revoked'
         );
     END IF;
 END
