@@ -22,7 +22,8 @@ async def update_workspace_name(conn, workspace_id, workspace_name: str):
     UPDATE workspaces
     SET name = $2,
         updated_at = now()
-    WHERE id = $1;
+    WHERE id = $1
+    RETURNING id, name, slug, status, created_at;
     """
     row = await conn.fetchrow(
         query,
@@ -34,7 +35,7 @@ async def update_workspace_name(conn, workspace_id, workspace_name: str):
 
 
 async def get_workspace(conn, workspace_id):
-    row = await conn.execute(
+    row = await conn.fetchrow(
         "SELECT * FROM workspaces WHERE id = $1;",
         workspace_id,
     )
@@ -42,7 +43,7 @@ async def get_workspace(conn, workspace_id):
 
 
 async def get_workspace_by_slug(conn, slug: str):
-    row = await conn.execute(
+    row = await conn.fetchrow(
         "SELECT * FROM workspaces WHERE slug = $1;",
         slug,
     )

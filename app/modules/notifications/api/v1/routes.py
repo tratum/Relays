@@ -1,10 +1,19 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Path, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Path,
+    Response,
+    status,
+)
 from pydantic import UUID4
 
 from app.core.errors import ErrorResponse
 from app.infra.db.session import get_pool
+from app.infra.guards.api_key import authenticate_api_key
 from app.infra.queues.email_queue import EmailQueue
 
 from ...db.notification_queries import (
@@ -57,6 +66,7 @@ async def health_check():
         409: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
+    dependencies=[Depends(authenticate_api_key)],
 )
 async def create_notify(
     req: NotificationRequestBody,
@@ -124,6 +134,7 @@ async def create_notify(
         404: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
     },
+    dependencies=[Depends(authenticate_api_key)],
 )
 async def get_notify(
     notification_id: Annotated[
