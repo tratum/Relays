@@ -228,4 +228,8 @@ async def get_workspace_members_route(
             detail=("No workspace was found for the provided workspace_id."),
         )
 
-    return WorkspaceMembersResponseBody(members)
+    return WorkspaceMembersResponseBody(
+        members=[
+            WorkspaceMemberBody.model_validate(member) for member in members
+        ]
+    )

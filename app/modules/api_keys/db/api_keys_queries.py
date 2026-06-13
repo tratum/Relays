@@ -49,7 +49,7 @@ async def create_api_key(
 
 async def get_api_key(
     conn,
-    api_key_id: UUID,
+    api_key_id: str,
 ):
     query = """
     SELECT
@@ -192,6 +192,7 @@ async def revoke_api_key(
       updated_at = NOW()
     WHERE id = $1
       AND workspace_id = $2
+      AND status = 'active'
     RETURNING
       id,
       workspace_id,

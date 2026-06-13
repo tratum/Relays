@@ -7,7 +7,7 @@ from pydantic import (
 from ..schemas.validators import ExpiresAt, KeyName
 
 
-class APIKeysRequestBody(BaseModel):
+class APIKeyRequestBody(BaseModel):
     model_config = ConfigDict(
         frozen=True,
     )

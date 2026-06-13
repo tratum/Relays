@@ -32,4 +32,4 @@ def validate_expires_at(
 
 
 KeyName = Annotated[str, AfterValidator(validate_key_name)]
-ExpiresAt = Annotated[str, AfterValidator(validate_expires_at)]
+ExpiresAt = Annotated[datetime | None, AfterValidator(validate_expires_at)]
