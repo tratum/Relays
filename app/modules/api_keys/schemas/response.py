@@ -10,7 +10,7 @@ from pydantic import (
 from ..constants import APIKeyStatus
 
 
-class APIKeysResponseBody(BaseModel):
+class APIKeyResponseBody(BaseModel):
     model_config = ConfigDict(
         frozen=True,
     )
@@ -33,8 +33,8 @@ class APIKeysResponseBody(BaseModel):
         examples=["rly_a1b2c3d"],
     )
 
-    api_key: str = Field(
-        ...,
+    api_key: str | None = Field(
+        default=None,
         description=(
             "Raw API key used for authenticating requests. "
             "This value is returned only once during key creation "
@@ -65,6 +65,39 @@ class APIKeysResponseBody(BaseModel):
         description="Timestamp indicating when the API key was created.",
         examples=[
             "2026-06-11T12:00:00Z",
+        ],
+    )
+
+    revoked_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Timestamp indicating when the API key was revoked. "
+            "Null indicates the API key has not been revoked."
+        ),
+        examples=[
+            "2026-07-01T09:00:00Z",
+        ],
+    )
+
+    last_used_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Timestamp of the most recent successful authentication "
+            "performed using this API key. "
+            "Null indicates the API key has never been used."
+        ),
+        examples=[
+            "2026-06-11T15:45:30Z",
+        ],
+    )
+
+    updated_at: datetime = Field(
+        ...,
+        description=(
+            "Timestamp indicating when the API key record was last modified."
+        ),
+        examples=[
+            "2026-07-01T09:00:00Z",
         ],
     )
 

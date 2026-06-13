@@ -1,6 +1,6 @@
 from enum import Enum
 
-API_KEY_PREFIX = "rly_"
+API_KEY_PREFIX = "rly"
 API_KEY_PREFIX_LENGTH = 12
 API_KEY_SECRET_LENGTH = 48
 

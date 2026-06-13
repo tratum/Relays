@@ -62,7 +62,7 @@ async def get_workspace_members(
 ):
     query = """
     SELECT
-      u.id AS user_id,
+      u.id AS id,
       u.email,
       u.name,
       wm.role

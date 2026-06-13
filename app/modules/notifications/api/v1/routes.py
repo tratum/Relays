@@ -72,10 +72,9 @@ async def create_notify(
     req: NotificationRequestBody,
     response: Response,
     idempotency_key: Annotated[
-        str,
+        UUID4,
         Header(
             alias="Idempotency-Key",
-            min_length=1,
         ),
     ],
 ):
@@ -86,38 +85,39 @@ async def create_notify(
             notification_record, is_new_request = await submit_notification(
                 conn=conn,
                 request=req,
-                idempotency_key=idempotency_key,
+                idempotency_key=str(idempotency_key),
             )
 
-    # Queue Processing
+        # Queue Processing
 
-    if is_new_request:
-        try:
-            EmailQueue.enqueue(str(notification_record["id"]))
+        if is_new_request:
+            try:
+                EmailQueue.enqueue(str(notification_record["id"]))
+                async with pool.acquire() as conn:
+                    await mark_queued(
+                        conn,
+                        notification_record["id"],
+                    )
 
-            async with pool.acquire() as conn:
-                await mark_queued(
-                    conn,
-                    notification_record["id"],
+            except Exception:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=(
+                        "Failed to enqueue notification "
+                        "for processing. Please retry."
+                    ),
                 )
 
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    "Failed to enqueue notification "
-                    "for processing. Please retry."
-                ),
+            response.status_code = (
+                status.HTTP_201_CREATED
+                if is_new_request
+                else status.HTTP_200_OK
+            )
+            response.headers["Location"] = (
+                f"/v1/notifications/{notification_record['id']}"
             )
 
-    response.status_code = (
-        status.HTTP_201_CREATED if is_new_request else status.HTTP_200_OK
-    )
-    response.headers["Location"] = (
-        f"/v1/notifications/{notification_record['id']}"
-    )
-
-    return build_post_response(notification_record)
+            return build_post_response(notification_record)
 
 
 # --------------------------------------------------

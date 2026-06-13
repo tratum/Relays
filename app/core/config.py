@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     ENV: str = "dev"
     VERSION: str = "v1"
     ENABLE_DOCS: bool = True
-
+    DEBUG: bool = True
     DATABASE_URL: str
     REDIS_URL: str
 
