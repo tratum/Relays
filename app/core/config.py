@@ -12,8 +12,10 @@ class Settings(BaseSettings):
     ENV: Environment
     VERSION: str
     ENABLE_DOCS: bool
-    DATABASE_URL: str
     REDIS_URL: str
+    DATABASE_URL: str
+    JWT_ALGORITHM: str
+    JWT_SECRET: str
 
     @property
     def DEBUG(self) -> bool:

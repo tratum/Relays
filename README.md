@@ -184,8 +184,13 @@ Create a `.env.podman` file:
 ```env
 ENV=dev
 VERSION=v1
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/relays
-REDIS_URL=redis://redis:6379/0
+ENABLE_DOCS=True
+REDIS_URL=redis://localhost:6379/0
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/relays
+JWT_ALGORITHM="HS256"
+# JWT signing secret. Generate with:
+# python -c "import secrets; print(secrets.token_urlsafe(64))"
+JWT_SECRET=xxxx-xxxxx_xxxxx-xxxxxx # Cryptographically Secure random url-friendly string with 64 bytes (512 bits) of entropy
 ```
 
 #### 3. Prepare pgAdmin Data Directory
@@ -237,8 +242,13 @@ curl -Ls https://astral.sh/uv/install.sh | sh
 ```env
 ENV=dev
 VERSION=v1
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/relays
+ENABLE_DOCS=True
 REDIS_URL=redis://localhost:6379/0
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/relays
+JWT_ALGORITHM="HS256"
+# JWT signing secret. Generate with:
+# python -c "import secrets; print(secrets.token_urlsafe(64))"
+JWT_SECRET=xxxx-xxxxx_xxxxx-xxxxxx # Cryptographically Secure random url-friendly string with 64 bytes (512 bits) of entropy
 ```
 
 #### 3. Install Dependencies
