@@ -1,1 +1,2 @@
 SYSTEM_REQUEST_ID = "system"
+API_VERSION = "/v1"

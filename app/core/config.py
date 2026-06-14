@@ -1,22 +1,23 @@
-import logging
+from enum import Enum
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def initialize_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | %(name)s | request_id=%(request_id)s | %(message)s",
-    )
+class Environment(str, Enum):
+    DEV = "dev"
+    PROD = "prod"
 
 
 class Settings(BaseSettings):
-    ENV: str = "dev"
-    VERSION: str = "v1"
-    ENABLE_DOCS: bool = True
-    DEBUG: bool = True
+    ENV: Environment
+    VERSION: str
+    ENABLE_DOCS: bool
     DATABASE_URL: str
     REDIS_URL: str
+
+    @property
+    def DEBUG(self) -> bool:
+        return self.ENV == Environment.DEV
 
     model_config = SettingsConfigDict(
         env_file=".env",

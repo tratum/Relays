@@ -1,10 +1,11 @@
 from typing import Annotated
 
 from asyncpg import UniqueViolationError
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, status
 from pydantic import UUID4
 
-from app.core.errors import ErrorResponse
+from app.core.error_codes import ErrorCode
+from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
 from app.modules.api_keys.db.api_keys_queries import (
     create_api_key,
@@ -82,9 +83,10 @@ async def create_api_key_route(
     pool = get_pool()
     async with pool.acquire() as conn:
         if await get_workspace(conn, workspace_id) is None:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace Not Found",
+                code=ErrorCode.NOT_FOUND,
+                message="Workspace Not Found",
             )
 
         key = generate_api_key()
@@ -103,9 +105,10 @@ async def create_api_key_route(
                 )
 
         except UniqueViolationError:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="API key name already exists",
+                code=ErrorCode.CONFLICT,
+                message="API Key Name already exists",
             )
 
         return APIKeyResponseBody(
@@ -157,9 +160,10 @@ async def list_api_keys_route(
         )
 
         if workspace is None:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found",
+                code=ErrorCode.NOT_FOUND,
+                message="Workspace not found",
             )
 
         api_keys = await list_workspace_api_keys(
@@ -219,9 +223,10 @@ async def get_api_key_route(
         )
 
         if workspace is None:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found",
+                code=ErrorCode.NOT_FOUND,
+                message="Workspace not found",
             )
 
         api_key = await get_api_key_by_id_and_workspace(
@@ -231,9 +236,10 @@ async def get_api_key_route(
         )
 
         if api_key is None:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="API key not found",
+                code=ErrorCode.NOT_FOUND,
+                message="API Key not found",
             )
 
         return APIKeyListResponseBody(
@@ -286,9 +292,10 @@ async def revoke_api_key_route(
         )
 
         if workspace is None:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Workspace not found",
+                code=ErrorCode.NOT_FOUND,
+                message="API Key not found",
             )
 
         async with conn.transaction():
@@ -299,9 +306,10 @@ async def revoke_api_key_route(
             )
 
         if revoked_api_key is None:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="API key not found",
+                code=ErrorCode.NOT_FOUND,
+                message="API Key not found",
             )
 
         return APIKeyResponseBody(
