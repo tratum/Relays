@@ -3,11 +3,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.core.config import config, initialize_logging
+from app.core.config import config
 from app.core.constants import SYSTEM_REQUEST_ID
 from app.core.exceptions import (
     register_exception_handlers,
 )
+from app.core.logging import initialize_logging
 from app.infra.db.session import (
     close_db,
     init_db,

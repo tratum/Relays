@@ -4,14 +4,14 @@ from fastapi import (
     APIRouter,
     Depends,
     Header,
-    HTTPException,
     Path,
     Response,
     status,
 )
 from pydantic import UUID4
 
-from app.core.errors import ErrorResponse
+from app.core.error_codes import ErrorCode
+from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
 from app.infra.guards.api_key import authenticate_api_key
 from app.infra.queues.email_queue import EmailQueue
@@ -100,12 +100,10 @@ async def create_notify(
                     )
 
             except Exception:
-                raise HTTPException(
+                raise APIException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=(
-                        "Failed to enqueue notification "
-                        "for processing. Please retry."
-                    ),
+                    code=ErrorCode.INTERNAL_ERROR,
+                    message="Failed to Enqueue Notification for Processing. Please retry.",
                 )
 
             response.status_code = (
@@ -151,13 +149,10 @@ async def get_notify(
         )
 
     if not result:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "Notification not found. "
-                "Verify the notification_id "
-                "and try again."
-            ),
-        )
+      raise APIException(
+          status_code=status.HTTP_404_NOT_FOUND,
+          code=ErrorCode.NOT_FOUND,
+          message="Notification not found. Verify the notification_id and try again.",
+      )
 
     return build_get_response(result)

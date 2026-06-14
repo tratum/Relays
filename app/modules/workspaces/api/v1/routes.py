@@ -1,10 +1,11 @@
 from typing import Annotated
 
 from asyncpg import UniqueViolationError
-from fastapi import APIRouter, HTTPException, Path, status
+from fastapi import APIRouter, Path, status
 from pydantic import UUID4
 
-from app.core.errors import ErrorResponse
+from app.core.error_codes import ErrorCode
+from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
 
 from ...constants import WorkspaceMemberRoles, slugify
@@ -83,9 +84,10 @@ async def create_workspace_route(
                 )
 
                 if existing_user:
-                    raise HTTPException(
+                    raise APIException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail=("A user with this email already exists."),
+                        code=ErrorCode.CONFLICT,
+                        message="A user with this email already exists.",
                     )
 
                 # -----------------------------------------
@@ -99,9 +101,10 @@ async def create_workspace_route(
                 )
 
                 if existing_workspace:
-                    raise HTTPException(
+                    raise APIException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail=("A workspace with this name already exists."),
+                        code=ErrorCode.CONFLICT,
+                        message="A workspace with this name already exists.",
                     )
 
                 user = await create_user(
@@ -130,12 +133,10 @@ async def create_workspace_route(
 
     ## Just a Safety Net for Race Conditions
     except UniqueViolationError:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "A user or workspace with the provided "
-                "information already exists."
-            ),
+            code=ErrorCode.CONFLICT,
+            message="A user or workspace with the provided information already exists.",
         )
 
 
@@ -175,9 +176,10 @@ async def get_workspace_route(
         )
 
     if workspace is None:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=("No workspace was found for the provided workspace_id."),
+            code=ErrorCode.NOT_FOUND,
+            message="No workspace was found for the provided workspace_id.",
         )
 
     return workspace
@@ -223,9 +225,10 @@ async def get_workspace_members_route(
         )
 
     if workspace is None:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=("No workspace was found for the provided workspace_id."),
+            code=ErrorCode.NOT_FOUND,
+            message="No workspace was found for the provided workspace_id.",
         )
 
     return WorkspaceMembersResponseBody(

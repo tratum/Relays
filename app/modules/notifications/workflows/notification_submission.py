@@ -1,7 +1,9 @@
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import status
 
+from app.core.error_codes import ErrorCode
+from app.core.errors import APIException
 from app.core.hashing import canonical_hash
 from app.core.idempotency import (
     complete_idempotency,
@@ -36,9 +38,10 @@ def resolve_recipient(
             return str(request.payload.url)
 
         case _:
-            raise HTTPException(
+            raise APIException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unsupported notification channel.",
+                code=ErrorCode.BAD_REQUEST,
+                message="Unsupported notification channel.",
             )
 
 
@@ -102,13 +105,10 @@ async def submit_notification(
     # --------------------------------------------------
 
     if not existing_idempotency_record:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "Unable to process idempotent request "
-                "due to an internal error. "
-                "Please retry."
-            ),
+            code=ErrorCode.INTERNAL_ERROR,
+            message="Unable to process idempotent request due to an internal error. Please Try Again.",
         )
 
     # --------------------------------------------------
@@ -116,14 +116,10 @@ async def submit_notification(
     # --------------------------------------------------
 
     if existing_idempotency_record["request_hash"] != request_hash:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "This Idempotency-Key has already "
-                "been used with a different request "
-                "payload. Use a new Idempotency-Key "
-                "for different requests."
-            ),
+            code=ErrorCode.CONFLICT,
+            message="This Idempotency-Key has already been used with a different request payload. Use a new Idempotency-Key for different requests.",
         )
 
     # --------------------------------------------------
@@ -131,13 +127,10 @@ async def submit_notification(
     # --------------------------------------------------
 
     if not existing_idempotency_record["notification_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "This request is still being "
-                "processed. Retry the request "
-                "with the same Idempotency-Key."
-            ),
+        raise APIException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code=ErrorCode.NOT_FOUND,
+            message="This request is still being processed. Retry the request with the same Idempotency-Key.",
         )
 
     notification_record = await get_notification(
@@ -150,13 +143,10 @@ async def submit_notification(
     # --------------------------------------------------
 
     if not notification_record:
-        raise HTTPException(
+        raise APIException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "The request could not be completed "
-                "due to an internal inconsistency. "
-                "Please retry."
-            ),
+            code=ErrorCode.INTERNAL_ERROR,
+            message="The request could not be completed due to an internal inconsistency. Please Try Again.",
         )
 
     return notification_record, False
