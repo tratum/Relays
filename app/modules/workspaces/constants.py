@@ -13,6 +13,47 @@ class WorkspaceMemberRoles(str, Enum):
     MEMBER = "MEMBER"
 
 
+RESERVED_WORKSPACE_SLUGS = {
+    "admin",
+    "administrator",
+    "api",
+    "app",
+    "auth",
+    "billing",
+    "dashboard",
+    "docs",
+    "help",
+    "login",
+    "logout",
+    "me",
+    "register",
+    "root",
+    "settings",
+    "support",
+    "system",
+    "www",
+    "dev",
+    "development",
+    "prod",
+    "production",
+    "staging",
+    "sandbox",
+    "qa",
+    "test",
+    "testing",
+}
+
+
+def validate_workspace_slug(
+    slug: str,
+) -> None:
+    if not slug:
+        raise ValueError("Workspace Name produces an invalid slug")
+
+    if slug in RESERVED_WORKSPACE_SLUGS:
+        raise ValueError("The Workspace Name is reserved")
+
+
 def slugify(value: str) -> str:
     value = value.strip().lower()
 

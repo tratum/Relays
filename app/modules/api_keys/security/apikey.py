@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 
-from .constants import (
+from ..constants import (
     API_KEY_PREFIX,
     API_KEY_PREFIX_LENGTH,
     API_KEY_SECRET_LENGTH,

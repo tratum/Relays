@@ -8,7 +8,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
 
-from ...constants import WorkspaceMemberRoles, slugify
+from ...constants import WorkspaceMemberRoles, slugify, validate_workspace_slug
 from ...db.users_queries import (
     create_user,
     get_user_by_email,
@@ -43,101 +43,109 @@ async def health_check():
 
 
 # ------------------
-# Create Workspace
+# Create Workspace (This has been deprecated instead use /auth/register)
 # ------------------
+# @router.post(
+#     path="/workspaces",
+#     summary="Creates a Workspace",
+#     description=(
+#         "Creates a new workspace and assigns the creator as the "
+#         "workspace OWNER. A new user, workspace, and membership "
+#         "are created atomically within a single transaction."
+#     ),
+#     status_code=status.HTTP_201_CREATED,
+#     response_model=WorkspaceResponseBody,
+#     responses={
+#         400: {"model": ErrorResponse},
+#         401: {"model": ErrorResponse},
+#         403: {"model": ErrorResponse},
+#         404: {"model": ErrorResponse},
+#         409: {"model": ErrorResponse},
+#         500: {"model": ErrorResponse},
+#     },
+# )
+# async def create_workspace_route(
+#     req: WorkspaceRequestBody,
+# ):
+#     pool = get_pool()
 
+#     try:
+#         async with pool.acquire() as conn:
+#             async with conn.transaction():
+#                 # -----------------------------------------
+#                 # Validate Email
+#                 # -----------------------------------------
 
-@router.post(
-    path="/workspaces",
-    summary="Creates a Workspace",
-    description=(
-        "Creates a new workspace and assigns the creator as the "
-        "workspace OWNER. A new user, workspace, and membership "
-        "are created atomically within a single transaction."
-    ),
-    status_code=status.HTTP_201_CREATED,
-    response_model=WorkspaceResponseBody,
-    responses={
-        400: {"model": ErrorResponse},
-        401: {"model": ErrorResponse},
-        403: {"model": ErrorResponse},
-        404: {"model": ErrorResponse},
-        409: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    },
-)
-async def create_workspace_route(
-    req: WorkspaceRequestBody,
-):
-    pool = get_pool()
+#                 existing_user = await get_user_by_email(
+#                     conn,
+#                     req.email,
+#                 )
 
-    try:
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                # -----------------------------------------
-                # Validate Email
-                # -----------------------------------------
+#                 if existing_user:
+#                     raise APIException(
+#                         status_code=status.HTTP_409_CONFLICT,
+#                         code=ErrorCode.CONFLICT,
+#                         message="A user with this email already exists.",
+#                     )
 
-                existing_user = await get_user_by_email(
-                    conn,
-                    req.email,
-                )
+#                 # -----------------------------------------
+#                 # Generate + Validate Slug
+#                 # -----------------------------------------
 
-                if existing_user:
-                    raise APIException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        code=ErrorCode.CONFLICT,
-                        message="A user with this email already exists.",
-                    )
+#                 slug = slugify(req.workspace_name)
+#                 try:
+#                     validate_workspace_slug(slug)
 
-                # -----------------------------------------
-                # Generate + Validate Slug
-                # -----------------------------------------
+#                 except ValueError as exc:
+#                     raise APIException(
+#                         status_code=status.HTTP_400_BAD_REQUEST,
+#                         code=ErrorCode.INVALID_REQUEST,
+#                         message=str(exc),
+#                     )
 
-                slug = slugify(req.workspace_name)
-                existing_workspace = await get_workspace_by_slug(
-                    conn,
-                    slug,
-                )
+#                 existing_workspace = await get_workspace_by_slug(
+#                     conn,
+#                     slug,
+#                 )
 
-                if existing_workspace:
-                    raise APIException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        code=ErrorCode.CONFLICT,
-                        message="A workspace with this name already exists.",
-                    )
+#                 if existing_workspace:
+#                     raise APIException(
+#                         status_code=status.HTTP_409_CONFLICT,
+#                         code=ErrorCode.CONFLICT,
+#                         message="Workspace slug already exists.",
+#                     )
 
-                user = await create_user(
-                    conn,
-                    req.name,
-                    req.email,
-                )
-                workspace = await create_workspace(
-                    conn,
-                    req.workspace_name,
-                    slug,
-                )
+#                 user = await create_user(
+#                     conn,
+#                     req.name,
+#                     req.email,
+#                 )
+#                 workspace = await create_workspace(
+#                     conn,
+#                     req.workspace_name,
+#                     slug,
+#                 )
 
-                ## Creating OWNER Membership
-                await create_workspace_member(
-                    conn,
-                    workspace["id"],
-                    user["id"],
-                    WorkspaceMemberRoles.OWNER,
-                )
+#                 ## Creating OWNER Membership
+#                 await create_workspace_member(
+#                     conn,
+#                     workspace["id"],
+#                     user["id"],
+#                     WorkspaceMemberRoles.OWNER,
+#                 )
 
-                return {
-                    "user": user,
-                    "workspace": workspace,
-                }
+#                 return {
+#                     "user": user,
+#                     "workspace": workspace,
+#                 }
 
-    ## Just a Safety Net for Race Conditions
-    except UniqueViolationError:
-        raise APIException(
-            status_code=status.HTTP_409_CONFLICT,
-            code=ErrorCode.CONFLICT,
-            message="A user or workspace with the provided information already exists.",
-        )
+#     ## Just a Safety Net for Race Conditions
+#     except UniqueViolationError:
+#         raise APIException(
+#             status_code=status.HTTP_409_CONFLICT,
+#             code=ErrorCode.CONFLICT,
+#             message="A user or workspace with the provided information already exists.",
+#         )
 
 
 # --------------

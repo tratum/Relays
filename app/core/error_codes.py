@@ -9,3 +9,5 @@ class ErrorCode(StrEnum):
     CONFLICT = "conflict"
     INTERNAL_ERROR = "internal_error"
     BAD_REQUEST = "bad_request"
+    INVALID_ACCESS_TOKEN = "invalid_access_token"
+    ACCESS_TOKEN_EXPIRED = "access_token_expired"
