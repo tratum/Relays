@@ -1,3 +1,6 @@
+from uuid import UUID
+
+
 async def create_workspace_member(
     conn,
     workspace_id,
@@ -84,3 +87,25 @@ async def get_workspace_members(
     )
 
     return [dict(row) for row in rows]
+
+
+async def get_workspace_context(
+    conn,
+    user_id: UUID,
+):
+    query = """
+    SELECT
+      u.id,
+      u.email,
+      u.is_verified,
+      wm.workspace_id,
+      wm.role
+    FROM users u
+    INNER JOIN workspace_members wm
+      ON wm.user_id = u.id
+    WHERE u.id = $1;
+    """
+
+    row = await conn.fetchrow(query, user_id)
+
+    return dict(row) if row else None

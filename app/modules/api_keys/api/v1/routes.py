@@ -13,7 +13,7 @@ from app.modules.api_keys.db.api_keys_queries import (
     list_workspace_api_keys,
     revoke_api_key,
 )
-from app.modules.api_keys.security import (
+from app.modules.api_keys.security.apikey import (
     extract_prefix,
     generate_api_key,
     hash_api_key,

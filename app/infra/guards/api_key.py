@@ -8,7 +8,7 @@ from app.infra.db.session import get_pool
 from app.modules.api_keys.db.api_keys_queries import (
     get_api_key_by_prefix,
 )
-from app.modules.api_keys.security import (
+from app.modules.api_keys.security.apikey import (
     extract_prefix,
     hash_api_key,
     verify_api_key_hash,
