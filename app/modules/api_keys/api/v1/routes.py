@@ -7,23 +7,23 @@ from pydantic import UUID4
 from app.core.error_codes import ErrorCode
 from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
-from app.modules.api_keys.db.api_keys_queries import (
+
+from ....workspaces.db.workspaces_queries import get_workspace_by_id
+from ...db.api_keys_queries import (
     create_api_key,
     get_api_key_by_id_and_workspace,
     list_workspace_api_keys,
     revoke_api_key,
 )
-from app.modules.api_keys.security.apikey import (
-    extract_prefix,
-    generate_api_key,
-    hash_api_key,
-)
-from app.modules.workspaces.db.workspaces_queries import get_workspace
-
 from ...schemas.request import APIKeyRequestBody
 from ...schemas.response import (
     APIKeyListResponseBody,
     APIKeyResponseBody,
+)
+from ...security.apikey import (
+    extract_prefix,
+    generate_api_key,
+    hash_api_key,
 )
 
 router = APIRouter(tags=["API Keys API"])
@@ -82,7 +82,7 @@ async def create_api_key_route(
 ):
     pool = get_pool()
     async with pool.acquire() as conn:
-        if await get_workspace(conn, workspace_id) is None:
+        if await get_workspace_by_id(conn, workspace_id) is None:
             raise APIException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 code=ErrorCode.NOT_FOUND,
@@ -154,7 +154,7 @@ async def list_api_keys_route(
     pool = get_pool()
 
     async with pool.acquire() as conn:
-        workspace = await get_workspace(
+        workspace = await get_workspace_by_id(
             conn,
             workspace_id,
         )
@@ -217,7 +217,7 @@ async def get_api_key_route(
     pool = get_pool()
 
     async with pool.acquire() as conn:
-        workspace = await get_workspace(
+        workspace = await get_workspace_by_id(
             conn,
             workspace_id,
         )
@@ -286,7 +286,7 @@ async def revoke_api_key_route(
     pool = get_pool()
 
     async with pool.acquire() as conn:
-        workspace = await get_workspace(
+        workspace = await get_workspace_by_id(
             conn,
             workspace_id,
         )

@@ -1,4 +1,4 @@
-CREATE TABLE idempotency_keys (
+CREATE TABLE IF NOT EXISTS idempotency_keys (
   id BIGSERIAL PRIMARY KEY,
   idempotency_key TEXT NOT NULL,
   request_hash TEXT NOT NULL,
@@ -13,8 +13,8 @@ CREATE TABLE idempotency_keys (
   UNIQUE (api_key_id, method, path, idempotency_key)
 );
 
-CREATE INDEX idx_idempotency_lookup
+CREATE INDEX IF NOT EXISTS idx_idempotency_lookup
 ON idempotency_keys (api_key_id, method, path, idempotency_key);
 
-CREATE INDEX idx_idempotency_expiry
+CREATE INDEX IF NOT EXISTS idx_idempotency_expiry
 ON idempotency_keys (expires_at);

@@ -30,7 +30,8 @@ async def get_login_otp_by_user_id(conn, user_id: UUID):
     query = """
     SELECT *
     FROM login_otp
-    WHERE user_id = $1;
+    WHERE user_id = $1
+    AND consumed_at IS NULL;
     """
 
     row = await conn.fetchrow(query, user_id)

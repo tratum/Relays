@@ -50,7 +50,7 @@ class RegisterUserRequestBody(
     BaseModel,
 ):
     model_config = ConfigDict(
-        frozen=True,
+        extra="forbid",
     )
 
     registration_token: str = Field(
@@ -68,8 +68,15 @@ class RegisterUserRequestBody(
 
     workspace_name: WorkspaceName = Field(
         ...,
-        description=("Display name of the workspace."),
-        examples=["Acme Corporation"],
+        description=(
+            "Human-readable name of the workspace. "
+            "This name is used to generate the workspace slug."
+        ),
+        examples=[
+            "Acme",
+            "Acme Corporation",
+            "Relays Production",
+        ],
     )
 
 

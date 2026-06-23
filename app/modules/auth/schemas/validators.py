@@ -5,6 +5,20 @@ from pydantic import (
     EmailStr,
 )
 
+RESERVED_WORKSPACE_NAMES = {
+    "owner",
+    "member",
+    "api",
+    "admin",
+    "support",
+    "billing",
+    "settings",
+    "dashboard",
+    "auth",
+    "login",
+    "signup",
+}
+
 
 def validate_email_address(
     value: EmailStr,
@@ -23,8 +37,8 @@ def validate_user_name(
     if len(value) < 2:
         raise ValueError("User name must contain at least 2 characters")
 
-    if len(value) > 100:
-        raise ValueError("User name cannot exceed 100 characters")
+    if len(value) > 255:
+        raise ValueError("User name cannot exceed 255 characters")
 
     return value
 
@@ -35,13 +49,20 @@ def validate_workspace_name(
     value = " ".join(value.strip().split())
 
     if not value:
-        raise ValueError("Workspace name cannot be empty")
+        raise ValueError(
+            "Workspace name cannot be empty. Please provide a workspace name."
+        )
 
     if len(value) < 3:
         raise ValueError("Workspace name must contain at least 3 characters")
 
-    if len(value) > 100:
-        raise ValueError("Workspace name cannot exceed 100 characters")
+    if len(value) > 255:
+        raise ValueError("Workspace name cannot exceed 255 characters")
+
+    if value.lower() in RESERVED_WORKSPACE_NAMES:
+        raise ValueError(
+            f'"{value}" is a reserved workspace name. Please choose a different name.'
+        )
 
     return value
 

@@ -14,8 +14,8 @@ from ..db.notification_queries import (
     mark_processing,
     mark_sent,
 )
-from ..providers.email import (
-    MailProvider,
+from ..providers.email.fake import (
+    FakeMailProvider,
 )
 
 
@@ -84,7 +84,7 @@ async def handle_failure(
 
     error_message = str(error)
 
-    can_retry = MailProvider.can_retry(
+    can_retry = FakeMailProvider.can_retry(
         error,
         claimed,
     )
@@ -151,7 +151,7 @@ async def deliver_notification(
             claimed = notification
 
     try:
-        provider_response = await MailProvider.send(
+        provider_response = await FakeMailProvider.send(
             claimed,
             claimed["attempt_count"] + 1,
         )

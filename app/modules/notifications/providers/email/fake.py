@@ -1,4 +1,4 @@
-class MailProvider:
+class FakeMailProvider:
     @staticmethod
     async def send(notification, attempt_number):
         metadata = notification.get("metadata") or {}
