@@ -41,29 +41,7 @@ class VerifyRegistrationOTPResponseBody(
     )
 
 
-class RegisterUserResponseBody(
-    BaseModel,
-):
-    model_config = ConfigDict(
-        frozen=True,
-    )
-
-    access_token: str = Field(
-        ...,
-        description=(
-            "JWT access token issued after successful account creation."
-        ),
-        examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."],
-    )
-
-    token_type: str = Field(
-        ...,
-        description=("Authentication scheme used in the Authorization header."),
-        examples=["Bearer"],
-    )
-
-
-class LoginUserResponseBody(
+class AuthenticateUserResponseBody(
     BaseModel,
 ):
     model_config = ConfigDict(

@@ -7,18 +7,32 @@ from fastapi import (
 
 from app.core.errors import ErrorResponse
 from app.infra.guards.jwt import authenticate_jwt
-from app.modules.auth.schemas.requests import (
+
+from ...schemas.requests import (
     LoginUserRequestBody,
     RegisterUserRequestBody,
     RequestOTPRequestBody,
     VerifyRegistrationOTPRequestBody,
 )
-from app.modules.auth.schemas.response import (
+from ...schemas.response import (
+    AuthenticateUserResponseBody,
     CurrentUserResponseBody,
-    LoginUserResponseBody,
-    RegisterUserResponseBody,
     RequestOTPResponseBody,
     VerifyRegistrationOTPResponseBody,
+)
+from ...workflows.get_current_user import get_current_user
+from ...workflows.login.authenticate_account import (
+    authenticate_account,
+)
+from ...workflows.login.request_otp import request_login_otp
+from ...workflows.registration.create_account import (
+    create_account,
+)
+from ...workflows.registration.request_otp import (
+    request_registration_otp,
+)
+from ...workflows.registration.verify_otp import (
+    verify_registration_otp,
 )
 
 router = APIRouter(
@@ -69,7 +83,13 @@ async def health_check():
 async def request_registration_otp_route(
     req: RequestOTPRequestBody,
 ):
-    raise NotImplementedError
+    await request_registration_otp(req.email)
+    return RequestOTPResponseBody(
+        message=(
+            "If the email address is eligible for registration, "
+            "a verification code has been sent."
+        ),
+    )
 
 
 # ---------------------------------
@@ -98,7 +118,12 @@ async def request_registration_otp_route(
 async def verify_registration_otp_route(
     req: VerifyRegistrationOTPRequestBody,
 ):
-    raise NotImplementedError
+    reg_token = await verify_registration_otp(
+        email=req.email,
+        otp=req.otp,
+    )
+
+    return VerifyRegistrationOTPResponseBody(registration_token=reg_token)
 
 
 # ---------------------------------
@@ -115,7 +140,7 @@ async def verify_registration_otp_route(
         "workspace, and workspace membership atomically and "
         "returns a JWT access token."
     ),
-    response_model=RegisterUserResponseBody,
+    response_model=AuthenticateUserResponseBody,
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse},
@@ -124,10 +149,19 @@ async def verify_registration_otp_route(
         500: {"model": ErrorResponse},
     },
 )
-async def register_user_route(
+async def create_account_route(
     req: RegisterUserRequestBody,
 ):
-    raise NotImplementedError
+    access_token = await create_account(
+        registration_token=req.registration_token,
+        name=req.name,
+        workspace_name=req.workspace_name,
+    )
+
+    return AuthenticateUserResponseBody(
+        access_token=access_token,
+        token_type="Bearer",
+    )
 
 
 # ---------------------------------
@@ -154,7 +188,14 @@ async def register_user_route(
 async def request_login_otp_route(
     req: RequestOTPRequestBody,
 ):
-    raise NotImplementedError
+    await request_login_otp(req.email)
+
+    return RequestOTPResponseBody(
+        message=(
+            "If an account exists for this email address, "
+            "a login code has been sent."
+        ),
+    )
 
 
 # ---------------------------------
@@ -170,7 +211,7 @@ async def request_login_otp_route(
         "Upon successful verification a JWT access token is "
         "issued for authenticated access to protected APIs."
     ),
-    response_model=LoginUserResponseBody,
+    response_model=AuthenticateUserResponseBody,
     status_code=status.HTTP_200_OK,
     responses={
         400: {"model": ErrorResponse},
@@ -182,7 +223,15 @@ async def request_login_otp_route(
 async def login_route(
     req: LoginUserRequestBody,
 ):
-    raise NotImplementedError
+    access_token = await authenticate_account(
+        email=req.email,
+        otp=req.otp,
+    )
+
+    return AuthenticateUserResponseBody(
+        access_token=access_token,
+        token_type="Bearer",
+    )
 
 
 # ---------------------------------
@@ -209,4 +258,8 @@ async def login_route(
 async def current_user_route(
     req: Request,
 ):
-    raise NotImplementedError
+    result = await get_current_user(
+        user_id=req.state.user_id,
+    )
+
+    return CurrentUserResponseBody(**result)

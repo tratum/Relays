@@ -37,7 +37,8 @@ async def get_registration_otp_by_email(
     query = """
     SELECT *
     FROM registration_otp
-    WHERE email = $1;
+    WHERE email = $1
+    AND consumed_at IS NULL;
     """
 
     row = await conn.fetchrow(query, email)

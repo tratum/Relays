@@ -34,7 +34,7 @@ async def update_workspace_name(conn, workspace_id, workspace_name: str):
     return dict(row) if row else None
 
 
-async def get_workspace(conn, workspace_id):
+async def get_workspace_by_id(conn, workspace_id):
     row = await conn.fetchrow(
         "SELECT * FROM workspaces WHERE id = $1;",
         workspace_id,

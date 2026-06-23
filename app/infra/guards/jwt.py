@@ -4,7 +4,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import APIException
 from app.infra.db.session import get_pool
 from app.modules.auth.security.jwt import decode_access_token
-from app.modules.workspaces.db.workspace_members_queries import (
+from app.modules.workspaces.db.context_queries import (
     get_workspace_context,
 )
 
@@ -49,3 +49,4 @@ async def authenticate_jwt(
 
     req.state.user_id = workspace_context["user_id"]
     req.state.workspace_id = workspace_context["workspace_id"]
+    req.state.workspace_role = workspace_context["role"]

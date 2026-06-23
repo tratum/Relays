@@ -80,21 +80,6 @@ class WorkspaceMemberBody(UserBody):
     )
 
 
-class WorkspaceResponseBody(BaseModel):
-    model_config = ConfigDict(
-        frozen=True,
-    )
-
-    user: UserBody = Field(
-        ...,
-        description="Details of the user who owns the workspace",
-    )
-    workspace: WorkspaceBody = Field(
-        ...,
-        description="Details of the workspace",
-    )
-
-
 class WorkspaceMembersResponseBody(BaseModel):
     model_config = ConfigDict(
         frozen=True,

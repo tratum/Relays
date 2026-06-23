@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS registration_otp (
   consumed_at TIMESTAMPTZ NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  CONSTRAINT pk_id
+  CONSTRAINT pk_id_registration_otp
     PRIMARY KEY (id),
 
   CONSTRAINT uq_email
