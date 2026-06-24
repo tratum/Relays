@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import status
 
@@ -6,28 +6,34 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import APIException
 from app.infra.db.session import get_pool
 
-from ....workspaces.db.users_queries import (
-    get_user_by_email,
-)
 from ....workspaces.db.context_queries import (
     get_workspace_context,
 )
+from ....workspaces.db.users_queries import (
+    get_user_by_email,
+)
+from ...constants import REFRESH_TOKEN_TTL_DAYS
 from ...db.login_otp_queries import (
     consume_login_otp,
     delete_login_otp,
     get_login_otp_by_user_id,
 )
+from ...db.session_queries import create_session
 from ...security.jwt import create_access_token
 from ...security.otp import (
     hash_otp,
     verify_otp,
+)
+from ...security.refresh import (
+    generate_refresh_token,
+    hash_refresh_token,
 )
 
 
 async def authenticate_account(
     email: str,
     otp: str,
-) -> str:
+):
     pool = get_pool()
 
     async with pool.acquire() as conn:
@@ -103,5 +109,18 @@ async def authenticate_account(
             access_token = create_access_token(
                 user["id"],
             )
+            refresh_token = generate_refresh_token()
+            refresh_token_hash = hash_refresh_token(refresh_token)
+            exp_at = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_TTL_DAYS)
 
-            return access_token
+            await create_session(
+                conn,
+                user["id"],
+                refresh_token_hash,
+                expires_at=exp_at,
+            )
+
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            }

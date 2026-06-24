@@ -13,3 +13,5 @@ class ErrorCode(StrEnum):
     ACCESS_TOKEN_EXPIRED = "access_token_expired"
     INVALID_CREDENTIALS = "invalid_credentials"
     INVALID_OTP = "invalid_otp"
+    REFRESH_TOKEN_EXPIRED = "refresh_token expired"
+    INVALID_REFRESH_TOKEN = "invalid token"

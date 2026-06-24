@@ -2,8 +2,14 @@ from pydantic import (
     UUID4,
     BaseModel,
     ConfigDict,
-    EmailStr,
     Field,
+)
+
+from .validators import (
+    EmailAddress,
+    RefreshToken,
+    UserName,
+    WorkspaceName,
 )
 
 
@@ -56,6 +62,15 @@ class AuthenticateUserResponseBody(
         examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."],
     )
 
+    refresh_token: RefreshToken = Field(
+        ...,
+        description=(
+            "Long-lived refresh token used to obtain new access tokens "
+            "without requiring the user to authenticate again."
+        ),
+        examples=["k2v4Y7nJQ8fT..."],
+    )
+
     token_type: str = Field(
         ...,
         description=("Authentication scheme used in the Authorization header."),
@@ -82,20 +97,36 @@ class CurrentUserResponseBody(
         examples=["8d67a6e7-f2ef-4eb9-9d26-5ef1f3b2d911"],
     )
 
-    name: str = Field(
+    name: UserName = Field(
         ...,
         description=("Display name of the authenticated user."),
         examples=["John Doe"],
     )
 
-    email: EmailStr = Field(
+    email: EmailAddress = Field(
         ...,
         description=("Email address of the authenticated user."),
         examples=["owner@acme.com"],
     )
 
-    workspace_name: str = Field(
+    workspace_name: WorkspaceName = Field(
         ...,
         description=("Display name of the user's workspace."),
         examples=["Acme Corporation"],
+    )
+
+
+class LogoutResponseBody(
+    BaseModel,
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+
+    message: str = Field(
+        ...,
+        description=(
+            "Human-readable confirmation that the session was revoked."
+        ),
+        examples=["Logged out successfully."],
     )

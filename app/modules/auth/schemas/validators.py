@@ -81,6 +81,17 @@ def validate_otp_code(
     return value
 
 
+def validate_refresh_token(
+    value: str,
+) -> str:
+    value = value.strip()
+
+    if not value:
+        raise ValueError("Refresh token cannot be empty")
+
+    return value
+
+
 EmailAddress = Annotated[
     EmailStr,
     AfterValidator(validate_email_address),
@@ -99,4 +110,9 @@ WorkspaceName = Annotated[
 OTPCode = Annotated[
     str,
     AfterValidator(validate_otp_code),
+]
+
+RefreshToken = Annotated[
+    str,
+    AfterValidator(validate_refresh_token),
 ]
