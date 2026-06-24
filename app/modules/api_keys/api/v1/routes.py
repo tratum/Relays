@@ -1,12 +1,13 @@
 from typing import Annotated
 
 from asyncpg import UniqueViolationError
-from fastapi import APIRouter, Header, status
+from fastapi import APIRouter, Depends, Header, status
 from pydantic import UUID4
 
 from app.core.error_codes import ErrorCode
 from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
+from app.infra.guards.jwt import authenticate_jwt
 
 from ....workspaces.db.workspaces_queries import get_workspace_by_id
 from ...db.api_keys_queries import (
@@ -61,6 +62,7 @@ async def health_check():
         500: {"model": ErrorResponse},
     },
     response_model=APIKeyResponseBody,
+    dependencies=[Depends(authenticate_jwt)],
 )
 async def create_api_key_route(
     req: APIKeyRequestBody,
@@ -204,6 +206,7 @@ async def list_api_keys_route(
         500: {"model": ErrorResponse},
     },
     response_model=APIKeyListResponseBody,
+    dependencies=[Depends(authenticate_jwt)],
 )
 async def get_api_key_route(
     api_key_id: UUID4,
@@ -273,6 +276,7 @@ async def get_api_key_route(
         500: {"model": ErrorResponse},
     },
     response_model=APIKeyResponseBody,
+    dependencies=[Depends(authenticate_jwt)],
 )
 async def revoke_api_key_route(
     api_key_id: UUID4,

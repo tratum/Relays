@@ -10,6 +10,8 @@ from app.infra.guards.jwt import authenticate_jwt
 
 from ...schemas.requests import (
     LoginUserRequestBody,
+    LogoutRequestBody,
+    RefreshAccessTokenRequestBody,
     RegisterUserRequestBody,
     RequestOTPRequestBody,
     VerifyRegistrationOTPRequestBody,
@@ -17,23 +19,18 @@ from ...schemas.requests import (
 from ...schemas.response import (
     AuthenticateUserResponseBody,
     CurrentUserResponseBody,
+    LogoutResponseBody,
     RequestOTPResponseBody,
     VerifyRegistrationOTPResponseBody,
 )
 from ...workflows.get_current_user import get_current_user
-from ...workflows.login.authenticate_account import (
-    authenticate_account,
-)
+from ...workflows.login.authenticate_account import authenticate_account
 from ...workflows.login.request_otp import request_login_otp
-from ...workflows.registration.create_account import (
-    create_account,
-)
-from ...workflows.registration.request_otp import (
-    request_registration_otp,
-)
-from ...workflows.registration.verify_otp import (
-    verify_registration_otp,
-)
+from ...workflows.registration.create_account import create_account
+from ...workflows.registration.request_otp import request_registration_otp
+from ...workflows.registration.verify_otp import verify_registration_otp
+from ...workflows.sessions.logout import logout
+from ...workflows.sessions.refresh_access_token import refresh_access_token
 
 router = APIRouter(
     tags=["Authentication API"],
@@ -152,14 +149,15 @@ async def verify_registration_otp_route(
 async def create_account_route(
     req: RegisterUserRequestBody,
 ):
-    access_token = await create_account(
+    tokens = await create_account(
         registration_token=req.registration_token,
         name=req.name,
         workspace_name=req.workspace_name,
     )
 
     return AuthenticateUserResponseBody(
-        access_token=access_token,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
         token_type="Bearer",
     )
 
@@ -223,13 +221,14 @@ async def request_login_otp_route(
 async def login_route(
     req: LoginUserRequestBody,
 ):
-    access_token = await authenticate_account(
+    tokens = await authenticate_account(
         email=req.email,
         otp=req.otp,
     )
 
     return AuthenticateUserResponseBody(
-        access_token=access_token,
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
         token_type="Bearer",
     )
 
@@ -255,11 +254,75 @@ async def login_route(
     },
     dependencies=[Depends(authenticate_jwt)],
 )
-async def current_user_route(
-    req: Request,
-):
+async def current_user_route(req: Request):
     result = await get_current_user(
         user_id=req.state.user_id,
     )
 
     return CurrentUserResponseBody(**result)
+
+
+# ---------------------------------
+# Refresh Access Token
+# ---------------------------------
+
+
+@router.post(
+    "/auth/refresh",
+    summary="Refresh Access Token",
+    description=(
+        "Validate a refresh token and issue a new access token. "
+        "The supplied refresh token is rotated and replaced with "
+        "a newly issued refresh token."
+    ),
+    response_model=AuthenticateUserResponseBody,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def refresh_access_token_route(
+    req: RefreshAccessTokenRequestBody,
+):
+    tokens = await refresh_access_token(
+        req.refresh_token,
+    )
+
+    return AuthenticateUserResponseBody(
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+        token_type="Bearer",
+    )
+
+
+# ---------------------------------
+# Logout
+# ---------------------------------
+
+
+@router.post(
+    "/auth/logout",
+    summary="Logout User",
+    description=(
+        "Revoke the session associated with the supplied "
+        "refresh token. Once revoked, the refresh token "
+        "can no longer be used to obtain new access tokens."
+    ),
+    response_model=LogoutResponseBody,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse},
+        401: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+)
+async def logout_route(
+    req: LogoutRequestBody,
+):
+    await logout(req.refresh_token)
+
+    return LogoutResponseBody(
+        message="Logged out successfully.",
+    )

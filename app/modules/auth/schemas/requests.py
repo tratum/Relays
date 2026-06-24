@@ -7,6 +7,7 @@ from pydantic import (
 from .validators import (
     EmailAddress,
     OTPCode,
+    RefreshToken,
     UserName,
     WorkspaceName,
 )
@@ -97,4 +98,32 @@ class LoginUserRequestBody(
         ...,
         description=("One-time password sent to the user's email address."),
         examples=["123456"],
+    )
+
+
+class RefreshAccessTokenRequestBody(
+    BaseModel,
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+
+    refresh_token: RefreshToken = Field(
+        ...,
+        description=("Refresh token issued during authentication."),
+        examples=["Vw0hBvLq3fAq5XJm1q4sX6wKc8rPnYz..."],
+    )
+
+
+class LogoutRequestBody(
+    BaseModel,
+):
+    model_config = ConfigDict(
+        frozen=True,
+    )
+
+    refresh_token: RefreshToken = Field(
+        ...,
+        description=("Refresh token identifying the session to revoke."),
+        examples=["Vw0hBvLq3fAq5XJm1q4sX6wKc8rPnYz..."],
     )
