@@ -1,412 +1,402 @@
-# API Contract
+# API Design
 
 ---
 
-## Purpose
+# Purpose
 
-This document defines the **public HTTPS API contracts** for Relays.
+This document defines the public HTTP API contract for Relays.
 
-Relays exposes a unified notification API that allows clients to submit notification intents via HTTPS and query their delivery state.
+Rather than documenting individual endpoints, this document describes the conventions, guarantees, and design principles that apply consistently across the entire API.
 
-This document specifies:
+Endpoint-specific documentation, including request and response schemas, examples, and status codes, is automatically generated from the application using FastAPI's OpenAPI specification and is available through the Swagger UI.
 
-- Endpoints
-- Request/response schemas
-- Status codes
-- Transport guarantees
-- Explicit non-goals
+This document covers:
 
-It does **not** describe internal execution, retries, workers, or recovery.
+- API design principles
+- Versioning strategy
+- Transport security
+- Authentication model
+- Request and response conventions
+- Error model
+- Idempotency
+- Rate limiting
+- Request tracing
+- Compatibility guarantees
 
-<br>
+It intentionally does **not** describe:
 
-## Design Principles
+- Individual API endpoints
+- Internal workflows
+- Database implementation
+- Background workers
+- Retry logic
+- Provider integrations
 
-- API-first
-- Asynchronous by default
-- Channel-agnostic
-- Extensible without breaking changes
-- Minimal surface area for MVP
+Those concerns are documented elsewhere.
 
-The API accepts _notification intent_, not delivery outcomes.
+---
 
-<br>
+# OpenAPI Documentation
 
-## Transport & Security
+Relays automatically generates endpoint documentation using FastAPI's OpenAPI specification.
 
-All API endpoints must be accessed over HTTPS.
+The generated documentation is the authoritative source for:
 
-```
+- Available endpoints
+- Request schemas
+- Response schemas
+- Validation rules
+- Authentication requirements
+- Response examples
+- HTTP status codes
+
+Keeping endpoint documentation generated from the application ensures it always remains synchronized with the implementation and eliminates duplicate documentation.
+
+---
+
+# Design Principles
+
+The Relays API follows several core design principles.
+
+- **API-first** – Every platform capability is exposed through stable HTTP APIs.
+- **Asynchronous by default** – Requests represent delivery intent rather than immediate delivery.
+- **Channel agnostic** – Clients interact with a unified notification model regardless of the underlying provider.
+- **Explicit contracts** – Every request and response follows well-defined schemas.
+- **Backward compatibility** – Breaking changes are introduced only through new API versions.
+- **Minimal surface area** – The public API exposes only the capabilities required by clients while keeping internal implementation details private.
+
+---
+
+# Transport & Security
+
+All public API endpoints are served exclusively over HTTPS.
+
+```text
 https://api.relays.run
 ```
 
-- Plain HTTP is not supported
-- Requests over HTTP must be rejected or redirected at the load balancer / proxy layer
-- TLS termination may occur at:
-  - Reverse proxy (Caddy)
-  - Cloud load balancer
-  - API gateway
+HTTP is not supported.
 
-**_HTTPS is required to protect notification payloads, metadata, and future authentication credentials._**
+TLS termination may occur at:
 
-<br>
+- Reverse Proxy (Caddy)
+- Load Balancer
+- API Gateway
 
-## Base URL & Versioning
+HTTPS protects:
 
-All endpoints are versioned under:
+- Authentication credentials
+- API Keys
+- Notification payloads
+- Request metadata
+- Session tokens
 
-```
+Clients should always verify TLS certificates before transmitting sensitive information.
+
+---
+
+# Base URL & Versioning
+
+All public endpoints are versioned.
+
+Current API version:
+
+```text
 https://api.relays.run/v1
 ```
 
-<br>
+Versioning through the URL path allows multiple API versions to coexist while maintaining backward compatibility.
 
-## Core Concepts
+Breaking changes will only be introduced through a new major version.
 
-A notification represents a delivery intent submitted by a client.
+Non-breaking improvements, such as optional fields or additional endpoints, may be introduced within an existing version.
 
-- One notification targets **one recipient**
-- One notification uses **one delivery channel**
-- A notification progresses through a lifecycle asynchronously
+---
 
-## Request ID
+# Core Concepts
 
-Every error response includes a `request_id` field.
+The Relays API revolves around several core concepts.
 
-- Type: `UUID4`
-- Generated per request
-- Used for tracing, debugging, and support
+## Notification
 
-Clients should log and surface this ID when reporting issues.
+A notification represents an intent to deliver a message.
 
-<br>
+A notification:
 
-## API Endpoints
+- targets a single recipient
+- uses a single delivery channel
+- progresses asynchronously through its lifecycle
 
-<br>
+Submitting a notification does not guarantee successful delivery. It guarantees that Relays has accepted responsibility for processing the request.
 
-### 1. `POST` Notification Creation
+---
 
-<br>
+## Workspace
 
-#### Endpoint
+A workspace represents the tenant boundary within Relays.
 
-<br>
+Resources such as API Keys and Notifications belong to a workspace rather than directly to individual users.
 
-```bash
-POST https://api.relays.run/v1/notifications
-```
+---
 
-<br>
+## API Key
 
-#### Request Body
+API Keys authenticate applications and services making requests to the Notification API.
 
-All channel-specific data (including recipient) is contained within the `payload`.
+They provide machine-to-machine authentication.
 
-**Email Example**
+---
+
+## User Session
+
+User sessions authenticate dashboard users through JWT access tokens and refresh tokens.
+
+This authentication model is independent from API Key authentication.
+
+---
+
+# Authentication
+
+Relays supports two independent authentication mechanisms.
+
+| Authentication    | Intended For                      |
+| ----------------- | --------------------------------- |
+| API Keys          | Applications and backend services |
+| JWT Access Tokens | Authenticated dashboard users     |
+
+The authentication requirements for each endpoint are documented in the generated OpenAPI documentation.
+
+Authentication architecture and session management are described in `AUTH.md`.
+
+---
+
+# Request ID
+
+Every request receives a unique Request ID.
+
+This identifier is included in logs and error responses to simplify tracing and debugging.
+
+| Property     | Value       |
+| ------------ | ----------- |
+| Type         | UUID v4     |
+| Scope        | Per Request |
+| Generated By | Relays      |
+
+Clients should include the Request ID when reporting issues or contacting support.
+
+---
+
+# Request Headers
+
+The following HTTP headers are used throughout the Relays API.
+
+Some headers apply to every request, while others are only required for specific endpoints.
+
+| Header            | Required                     | Description                                          |
+| ----------------- | ---------------------------- | ---------------------------------------------------- |
+| `Authorization`   | Depends on endpoint          | Authentication credentials.                          |
+| `Idempotency-Key` | Notification submission only | Prevents duplicate execution of idempotent requests. |
+| `Content-Type`    | Request body                 | Must be `application/json`.                          |
+| `Accept`          | Optional                     | Defaults to `application/json`.                      |
+
+Endpoint-specific header requirements are documented in the generated OpenAPI documentation.
+
+---
+
+# Request Format
+
+Unless otherwise specified, all request bodies use JSON.
 
 ```json
 {
-  "channel": "email",
-  "payload": {
-    "to": "user@example.com",
-    "cc": [],
-    "bcc": [],
-    "subject": "Welcome",
-    "body": "Hello! Welcome to Relays."
-  },
-  "metadata": {
-    "source": "signup-service"
+  "..."
+}
+```
+
+Requests that contain malformed JSON or fail schema validation are rejected with an appropriate client error.
+
+---
+
+# Response Format
+
+Successful responses return JSON.
+
+Each endpoint defines its own response schema through the OpenAPI specification.
+
+Responses are immutable representations of the operation that was performed.
+
+---
+
+# Error Model
+
+Relays uses a consistent error format across all endpoints.
+
+```json
+{
+  "error": {
+    "code": "INVALID_REQUEST",
+    "message": "The supplied payload is invalid.",
+    "request_id": "9c5e27c4-f0f3-420d-a6dd-cd2b75f0671b"
   }
 }
 ```
 
+## Fields
+
+| Field        | Description                              |
+| ------------ | ---------------------------------------- |
+| `code`       | Stable application-specific error code.  |
+| `message`    | Human-readable description of the error. |
+| `request_id` | Unique identifier for request tracing.   |
+
+Applications should rely on `code` rather than `message` when implementing programmatic error handling.
+
+Messages may change over time without constituting a breaking API change.
+
 ---
 
-**SMS Example**
+# Idempotency
 
-```json
-{
-  "channel": "sms",
-  "payload": {
-    "to": "+919950649357",
-    "message": "Hello! Welcome to Relays."
-  },
-  "metadata": {
-    "source": "signup-service"
-  }
-}
+Relays supports idempotent execution for operations that create resources.
+
+Clients provide an `Idempotency-Key` header when retrying requests that may be affected by network failures or uncertain outcomes.
+
+For the same authenticated client, request method, endpoint, and idempotency key:
+
+- Identical requests return the original result.
+- Requests with a different payload are rejected.
+- Duplicate resource creation is prevented.
+
+Idempotency improves reliability by allowing clients to safely retry requests without introducing unintended side effects.
+
+---
+
+# Rate Limiting
+
+Certain endpoints are protected by rate limiting to ensure platform stability and reduce abuse.
+
+Examples include:
+
+- OTP generation
+- Authentication endpoints
+
+Rate limiting policies may differ between endpoints depending on their operational characteristics.
+
+When a request exceeds the configured limit, the API returns:
+
+```text
+429 Too Many Requests
 ```
 
----
-
-**Webhook Example**
-
-```json
-{
-  "channel": "webhook",
-  "payload": {
-    "url": "https://example.com/webhook",
-    "body": {
-      "event": "user.created"
-    }
-  }
-}
-```
-
-<br>
-
-#### Request Fields
-
-| Field    | Type   | Required | Description                                  |
-| -------- | ------ | -------- | -------------------------------------------- |
-| channel  | string | yes      | Delivery channel (`email`, `sms`, `webhook`) |
-| payload  | object | yes      | Channel-specific recipient and content       |
-| metadata | object | no       | Optional client-provided metadata            |
-
-#### Channel Payload Schemas
+Clients should respect the retry interval before issuing additional requests.
 
 ---
 
-**Email Payload**
+# HTTP Status Codes
 
-```json
-{
-  "to": "string",
-  "cc": "string[]",
-  "bcc": "string[]",
-  "subject": "string",
-  "body": "string"
-}
-```
+Relays follows conventional HTTP semantics.
 
-**Validation Rules**
+| Status Code                 | Meaning                                                   |
+| --------------------------- | --------------------------------------------------------- |
+| `200 OK`                    | Request completed successfully.                           |
+| `201 Created`               | A new resource was created.                               |
+| `202 Accepted`              | Request accepted for asynchronous processing.             |
+| `204 No Content`            | Request completed successfully without a response body.   |
+| `400 Bad Request`           | Invalid request payload or parameters.                    |
+| `401 Unauthorized`          | Authentication failed or credentials are missing.         |
+| `403 Forbidden`             | Authenticated but not permitted to perform the operation. |
+| `404 Not Found`             | Requested resource does not exist.                        |
+| `409 Conflict`              | Request conflicts with the current resource state.        |
+| `422 Unprocessable Entity`  | Request validation failed.                                |
+| `429 Too Many Requests`     | Rate limit exceeded.                                      |
+| `500 Internal Server Error` | Unexpected server error.                                  |
 
-- `to`: required, valid email
-- `cc`, `bcc`: optional arrays of valid emails
-- `subject`: optional
-- `body`: required, non-empty
-
----
-
-**SMS Payload**
-
-```json
-{
-  "to": "string",
-  "message": "string"
-}
-```
-
-**Validation Rules**
-
-- `to`: required, valid E.164 phone number
-- `message`: required, max length 160 characters
+Not every endpoint returns every status code. Endpoint-specific responses are documented in the generated OpenAPI documentation.
 
 ---
 
-**Webhook Payload**
+# Backward Compatibility
 
-```json
-{
-  "url": "string",
-  "body": "object"
-}
-```
+Relays is committed to maintaining backward compatibility within a major API version.
 
-**Validation Rules**
+The following changes are considered non-breaking:
 
-- `url`: required, valid HTTPS URL
-- `body`: required JSON object
+- Adding optional request fields.
+- Adding optional response fields.
+- Introducing new endpoints.
+- Expanding enum values where documented.
 
-<br>
+Breaking changes include:
 
-#### Response
+- Removing endpoints.
+- Removing response fields.
+- Changing request validation rules incompatibly.
+- Changing authentication requirements.
+- Altering the semantics of existing fields.
 
----
-
-**1. Success**
-
-- Status Code
-
-  ```bash
-  201 Created
-  ```
-
-- Response Body
-
-  ```json
-  {
-    "notification_id": "a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f",
-    "state": "created",
-    "created_at": "2026-04-11T05:48:52.592944Z"
-  }
-  ```
+Breaking changes will only be introduced through a new API version.
 
 ---
 
-**2. Validation Error**
+# Non-Goals
 
-- Status Code
+The Relays API intentionally does not expose internal implementation details.
 
-  ```bash
-  400 Bad Request
-  ```
+Clients should not depend on:
 
-- Response Body
+- Database schema
+- Background worker implementation
+- Retry algorithms
+- Queue implementation
+- Notification provider selection
+- Internal state transitions
 
-  ```json
-  {
-    "error": {
-      "code": "invalid_request",
-      "message": "Invalid input",
-      "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
-    }
-  }
-  ```
+These implementation details may evolve without affecting the public API contract.
+
+Only documented request and response contracts are considered stable public interfaces.
 
 ---
 
-**3. Server Error**
+# Stability Guarantees
 
-- Status Code
+The Relays API follows semantic versioning and strives to maintain backward compatibility within a major API version.
 
-  ```bash
-  500 Internal Server Error
-  ```
+Clients may safely rely on:
 
-- Response Body
+- Public API endpoints documented through OpenAPI.
+- Request and response schemas.
+- Authentication mechanisms.
+- HTTP status codes.
+- Application error codes.
 
-  ```json
-  {
-    "error": {
-      "code": "internal_error",
-      "message": "Unexpected error",
-      "request_id": "c9bf9e57-1685-4c89-bafb-ff5af830be8a"
-    }
-  }
-  ```
+Implementation details that are not part of the public contract may change without notice.
 
----
+Examples include:
 
-### 2. `GET` Notification Status
+- Database schema
+- Queue implementation
+- Background worker architecture
+- Retry algorithms
+- Notification provider selection
+- Internal service boundaries
 
-#### Endpoint
-
-```bash
-GET https://api.relays.run/v1/notifications/{notification_id}
-```
-
-#### Path Parameters
-
-| Name            | Type | Description             |
-| --------------- | ---- | ----------------------- |
-| notification_id | uuid | Notification identifier |
-
-<br>
-
-#### Response
+These implementation details are intentionally hidden behind the public API contract.
 
 ---
 
-**1. Success**
+# Related Documentation
 
-- Status Code
+This document describes the public API contract.
 
-  ```bash
-  200 OK
-  ```
+Additional aspects of the platform are documented separately.
 
-- Response Body
+| Document          | Description                                                         |
+| ----------------- | ------------------------------------------------------------------- |
+| `ARCHITECTURE.md` | Overall system architecture and component interactions.             |
+| `AUTH.md`         | Authentication, sessions, JWTs, refresh tokens, and security flows. |
+| `DATA_MODEL.md`   | Database schema, relationships, and ownership.                      |
+| `WORKERS.md`      | Background processing and notification delivery.                    |
+| `RECOVERY.md`     | Failure handling and recovery mechanisms.                           |
+| `BILLING.md`      | Billing model, plans, and usage metering (future).                  |
 
-  ```json
-  {
-    "notification_id": "a3f5d9c8-1b2c-4d5f-9f77-0b1a2c3d4e5f",
-    "channel": "email",
-    "recipient": "user@example.com",
-    "state": "processing",
-    "attempt_count": 2,
-    "max_attempts": 5,
-    "created_at": "2026-01-10T14:00:00Z",
-    "updated_at": "2026-01-10T14:20:00Z",
-    "last_attempt_at": "2026-01-10T14:20:00Z",
-    "sent_at": null,
-    "last_error": "SMTP 421 Temporary service unavailable"
-  }
-  ```
-
-<br>
-
-**_Notes_**
-
-- `200 OK` is returned for any existing notification regardless of lifecycle state
-- `last_error` is a concise, human-readable failure summary
-- Detailed provider responses belong in delivery_attempt logs
-
----
-
-**2. Not Found**
-
-- Status Code
-
-  ```bash
-  404 Not Found
-  ```
-
-- Response Body
-
-  ```json
-  {
-    "error": {
-      "code": "not_found",
-      "message": "Notification not found",
-      "request_id": "9a8b7c6d-1234-5678-9012-abcdefabcdef"
-    }
-  }
-  ```
-
-<br>
-
-## Idempotency
-
-- Not supported in MVP
-- Duplicate requests may create duplicate notifications
-
-## Authentication & Authorization
-
-- Not implemented in MVP
-- HTTPS ensures transport security only
-
-## Rate Limiting
-
-- Not implemented in MVP
-
-## Delivery Guarantees
-
-- At-least-once delivery
-- Duplicate deliveries are possible
-- No exactly-once guarantees
-
-## Explicit Non-Goals (MVP)
-
-- No synchronous delivery
-- No bulk/multi-recipient notifications
-- No scheduling API
-- No cancellation API
-- No provider selection
-
-## Forward Compatibility Notes
-
-The API is designed to support future additions:
-
-- Multiple delivery channels
-- API key authentication
-- Rate limiting
-- Billing and usage tracking
-- Webhook callbacks
-
-All future changes must preserve:
-
-- Existing paths
-- Required fields
-- Response structure
+For endpoint-specific documentation, request and response schemas, examples, and authentication requirements, refer to the automatically generated OpenAPI (Swagger) documentation exposed by the application.
