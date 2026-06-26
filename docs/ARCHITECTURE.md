@@ -1,137 +1,493 @@
-# Architecture
-
-This document describes the high-level architecture of **Relays**,
-focusing on component responsibilities, data flow, and failure handling.
-
-The system is intentionally designed for a single-region, single-instance deployment.
+# System Architecture
 
 ---
 
-## High-Level Architecture Diagram
+# 1. Purpose
+
+This document defines the overall system architecture of **Relays**.
+
+It describes the major architectural decisions, system boundaries, component responsibilities, infrastructure, execution flow, and long-term evolution strategy.
+
+The goal of this document is **not** to describe individual APIs or database schemas. Instead, it explains **how the entire platform is structured** and **why specific architectural decisions were made**.
+
+Detailed implementation documents are maintained separately:
+
+- `AUTH.md`
+- `DATA_MODEL.md`
+- `API.md`
+- `WORKERS.md`
+- `RECOVERY.md`
+- `BILLING.md`
+
+---
+
+# 2. Design Principles
+
+Relays is designed as an **API-first notification infrastructure platform**.
+
+Every architectural decision follows a small set of core principles.
+
+## API First
+
+Everything exposed by the platform is designed around stable, versioned HTTP APIs.
+
+Internal implementations may change, but API contracts should remain backward compatible whenever possible.
+
+---
+
+## Modular Monolith
+
+Relays is implemented as a **Modular Monolith**.
+
+The application is divided into independent business modules with clear ownership boundaries while sharing a single deployment and database.
+
+Current modules include:
+
+- Authentication
+- Workspaces
+- API Keys
+- Notifications
+
+This architecture minimizes operational complexity while allowing individual modules to be extracted into independent services in the future.
+
+---
+
+## PostgreSQL is the Source of Truth
+
+Persistent business state always resides in PostgreSQL.
+
+Examples include:
+
+- Users
+- Workspaces
+- API Keys
+- Sessions
+- Notifications
+- Delivery Attempts
+
+Redis is never treated as the source of truth.
+
+---
+
+## Redis is Infrastructure
+
+Redis provides infrastructure capabilities rather than persistent storage.
+
+Current responsibilities include:
+
+- Celery message broker
+- OTP rate limiting
+
+Future responsibilities may include:
+
+- API key rate limiting
+- Notification rate limiting
+- Webhook rate limiting
+- Read-through caching
+
+Redis data should always be considered disposable.
+
+---
+
+## Asynchronous by Default
+
+Notification delivery is inherently asynchronous.
+
+API requests should complete quickly after validation and persistence.
+
+Actual delivery is delegated to background workers.
+
+This provides:
+
+- Lower API latency
+- Better reliability
+- Automatic retries
+- Provider isolation
+
+---
+
+## Explicit Business Workflows
+
+Business operations are implemented as explicit workflows.
+
+Examples include:
+
+- Registration
+- Login
+- Notification Submission
+- Notification Delivery
+
+Workflows coordinate multiple database operations and infrastructure components while keeping business logic centralized.
+
+---
+
+## Thin API Layer
+
+Route handlers are intentionally minimal.
+
+Their responsibilities are limited to:
+
+- Request validation
+- Invoking workflows
+- Returning responses
+
+Business logic never lives inside API routes.
+
+---
+
+## Infrastructure Isolation
+
+Infrastructure concerns are separated from business logic.
+
+Examples include:
+
+- PostgreSQL
+- Redis
+- JWT
+- Celery
+- Mail Providers
+
+Business modules depend on abstractions rather than implementation details wherever practical.
+
+---
+
+# 3. High-Level Architecture
+
+The system architecture can be represented as:
+
+```text
+                           Clients
+                              │
+                              ▼
+                      HTTPS REST API
+                              │
+                              ▼
+                        FastAPI Server
+                              │
+      ┌───────────────┬───────────────┬───────────────┐
+      │               │               │               │
+      ▼               ▼               ▼               ▼
+ Authentication   Notifications   API Keys    Workspaces
+      │               │               │               │
+      └───────────────┴───────┬───────┴───────────────┘
+                              ▼
+                          Workflows
+                 ┌────────────┼────────────┐
+                 ▼            ▼            ▼
+           PostgreSQL      Redis       Celery
+                 │                          │
+                 │                          ▼
+                 │                  Background Workers
+                 │                          │
+                 └──────────────────────────▼
+                     Notification Providers
+```
+
+Every incoming request ultimately passes through a workflow before interacting with infrastructure.
+
+Business modules never communicate directly with one another through HTTP.
 
 ![Relays Architecture](docs/digrams/Architecture.png)
 
-## Core Components
+---
 
-### API Service (FastAPI)
+# 4. Component Overview
+
+## FastAPI
+
+FastAPI exposes the public HTTP interface of Relays.
 
 Responsibilities:
 
-- Accept HTTP notification requests
-- Validate request payloads
-- Persist notification intent to PostgreSQL
-- Enqueue delivery jobs for asynchronous processing
-- Expose notification status via read APIs
+- Request validation
+- Authentication
+- Response serialization
+- OpenAPI generation
 
-Non-responsibilities:
-
-- Sending emails
-- Retrying deliveries
-- Managing backoff or failure logic
-
-**_The API never attempts delivery directly._**
+FastAPI does not implement business rules.
 
 ---
 
-### DB (Primary Data Store)
+## PostgreSQL
 
-PostgreSQL is the **source of truth** for the system.
+PostgreSQL stores all durable platform state.
 
-It stores:
+Examples include:
 
-- Notifications and their lifecycle state
-- Delivery attempts and failure metadata
-- Retry counts and scheduling information
+- Users
+- Workspaces
+- API Keys
+- Sessions
+- Notifications
+- Delivery Attempts
 
-All state transitions are persisted to PostgreSQL.
-If Redis or workers fail, PostgreSQL represents the authoritative system state.
-
----
-
-### Redis (Queue and Scheduling)
-
-Redis is used as a **temporary coordination mechanism**, not as a source of truth.
-
-Responsibilities:
-
-- Hold pending delivery jobs
-- Schedule retries with delays (backoff)
-- Enable asynchronous processing by workers
-
-Redis does not store authoritative notification state.
-Loss of Redis data does not result in permanent notification loss.
+Every business operation ultimately persists data to PostgreSQL.
 
 ---
 
-### Workers (Background Processor)
+## Redis
 
-Workers are responsible for:
+Redis provides low-latency infrastructure services.
 
-- Fetching jobs from Redis
-- Attempting email delivery via the configured provider
-- Recording delivery attempts in PostgreSQL
-- Updating notification lifecycle state
-- Scheduling retries when failures occur
+Current usage:
 
-Workers are the only components allowed to transition notifications
-into terminal states (`sent`, `failed`).
+- Celery broker
+- Sliding-window rate limiting
+
+Redis may be safely cleared without permanent data loss.
 
 ---
 
-## End-to-End Flow
+## Celery
 
-1. Client submits email notification request to API
-2. API validates input
-3. API persists notification with state `created`
-4. API enqueues delivery job in Redis
-5. Worker picks up job and transitions state to `processing`
-6. Worker attempts email delivery
-7. Worker records delivery attempt
-8. Notification state transitions to `sent`
+Celery executes asynchronous jobs.
 
----
+Current responsibilities:
 
-## Failure Handling and Retries
+- Email delivery
 
-### Delivery Failure
+Future responsibilities may include:
 
-- A failed delivery attempt is recorded with error metadata
-- Notification remains non-terminal
-- Worker computes next retry time using backoff
-- Job is re-enqueued with delay
-
-### Retry Exhaustion
-
-- Once max retry attempts are reached:
-  - Notification transitions to `failed`
-  - No further retries are scheduled
+- SMS delivery
+- Webhook delivery
+- Scheduled tasks
+- Usage aggregation
 
 ---
 
-## Crash Scenarios
+## Notification Providers
 
-### API Crash After Persist, Before Enqueue
+Providers integrate with external delivery services.
 
-- Notification exists in PostgreSQL
-- A recovery or periodic enqueue mechanism can requeue it
+Current provider implementations include:
 
-### Worker Crash During Delivery
+- Deterministic fake provider
+- Mailrelay
 
-- No terminal state is written
-- Notification remains retryable
-- Subsequent worker run retries safely
-
-### Redis Data Loss
-
-- No notification data is lost
-- Pending notifications can be re-enqueued from PostgreSQL
+Additional providers can be introduced without modifying higher-level workflows.
 
 ---
 
-## Design Principles
+# 5. Request Lifecycle
 
-- PostgreSQL is the source of truth
-- Redis is disposable
-- Workers own delivery and retries
-- All state transitions are persisted
-- Failures are explicit and inspectable
+A typical API request follows the same execution path.
+
+```text
+HTTP Request
+      │
+      ▼
+FastAPI Route
+      │
+      ▼
+Validation
+      │
+      ▼
+Workflow
+      │
+      ▼
+Database
+      │
+      ▼
+Response
+```
+
+For asynchronous operations:
+
+```text
+HTTP Request
+      │
+      ▼
+FastAPI Route
+      │
+      ▼
+Workflow
+      │
+      ▼
+Persist Notification
+      │
+      ▼
+Publish Celery Task
+      │
+      ▼
+Return 201 Created
+                     │
+                     ▼
+             Background Worker
+                     │
+                     ▼
+          External Notification Provider
+```
+
+This separation ensures API responsiveness regardless of provider latency.
+
+---
+
+# 6. Module Architecture
+
+Each business capability is implemented as an independent module.
+
+A module owns:
+
+- Routes
+- Schemas
+- Workflows
+- Database queries
+- Security components
+- Constants
+
+A typical module structure is:
+
+```text
+module/
+├── api/
+├── db/
+├── schemas/
+├── workflows/
+├── security/
+└── constants.py
+```
+
+This organization keeps related functionality together while minimizing coupling between modules.
+
+---
+
+# 7. Infrastructure Components
+
+Infrastructure code is isolated under the `infra` package.
+
+Responsibilities include:
+
+- PostgreSQL connection management
+- Redis client management
+- Celery configuration
+- Middleware
+- Authentication guards
+- Background worker runtime
+
+Infrastructure components should not contain business rules.
+
+They provide reusable services consumed by workflows.
+
+---
+
+# 8. Data Ownership
+
+Each business entity has a single owner.
+
+| Entity            | Owner               |
+| ----------------- | ------------------- |
+| Users             | Authentication      |
+| Sessions          | Authentication      |
+| Registration OTP  | Authentication      |
+| Login OTP         | Authentication      |
+| Workspaces        | Workspace Module    |
+| Workspace Members | Workspace Module    |
+| API Keys          | API Key Module      |
+| Notifications     | Notification Module |
+| Delivery Attempts | Notification Module |
+
+Ownership defines which module is responsible for creating, updating, and validating each entity.
+
+---
+
+# 9. Asynchronous Processing
+
+Notification delivery is intentionally decoupled from request processing.
+
+The API accepts a notification request by:
+
+1. Validating the payload.
+2. Persisting the notification.
+3. Publishing a worker task.
+4. Returning immediately.
+
+Delivery occurs independently in the background.
+
+This architecture enables retries, provider failover, and resilience without impacting client latency.
+
+---
+
+# 10. Authentication Architecture
+
+Authentication is implemented as an independent subsystem.
+
+Major capabilities include:
+
+- Email OTP registration
+- Email OTP login
+- JWT access tokens
+- Refresh tokens
+- Session management
+- Refresh token rotation
+- Logout
+- Current user retrieval
+- OTP rate limiting
+
+Authentication details are documented in `AUTH.md`.
+
+---
+
+# 11. Failure Isolation
+
+Relays is designed so failures remain localized whenever possible.
+
+Examples include:
+
+- Email provider outages do not prevent notification submission.
+- Worker failures do not terminate API requests.
+- Redis failures do not corrupt PostgreSQL state.
+- Individual notification failures do not affect unrelated notifications.
+
+This isolation improves reliability and simplifies recovery.
+
+---
+
+# 12. Scalability Strategy
+
+Relays is designed to scale incrementally.
+
+Horizontal scaling can be achieved independently for:
+
+- API servers
+- Celery workers
+- PostgreSQL
+- Redis
+
+The modular architecture also allows business modules to be extracted into independent services as requirements evolve.
+
+---
+
+# 13. Future Evolution
+
+The current Modular Monolith is intentionally designed to support future decomposition.
+
+Potential future services include:
+
+```text
+Authentication Service
+
+Workspace Service
+
+Notification Service
+
+Billing Service
+
+Provider Service
+```
+
+Because business logic is already isolated into modules, migration to independently deployable services can occur with relatively small architectural changes.
+
+---
+
+# 14. Non-Goals
+
+This document intentionally does not describe:
+
+- Individual API endpoints
+- Database schema definitions
+- Worker retry algorithms
+- Authentication implementation details
+- Provider-specific integrations
+- Billing logic
+
+These concerns are documented separately in their respective design documents.
