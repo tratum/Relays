@@ -8,6 +8,7 @@ from app.core.constants import SYSTEM_REQUEST_ID
 from app.core.error_codes import ErrorCode
 from app.core.errors import APIException
 from app.infra.db.session import get_pool
+from app.infra.redis.rate_limiting.otp.limiter import OTPFlow, otp_rate_limit
 
 from ....workspaces.db.users_queries import (
     get_user_by_email,
@@ -29,6 +30,15 @@ async def request_login_otp(
     email: str,
 ) -> None:
     pool = get_pool()
+
+    rate_limit = await otp_rate_limit(email=email, flow=OTPFlow.LOGIN)
+
+    if not rate_limit:
+        raise APIException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code=ErrorCode.RATE_LIMIT_EXCEEDED,
+            message="Too many OTP requests. Please try again later.",
+        )
 
     try:
         async with pool.acquire() as conn:

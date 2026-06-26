@@ -15,3 +15,11 @@ def get_redis() -> Redis:
         raise RuntimeError("Redis Client not initialized")
 
     return _redis
+
+
+async def close_redis():
+    global _redis
+
+    if _redis is not None:
+        await _redis.aclose()
+        _redis = None
