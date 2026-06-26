@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 
 from app.core.config import config
 from app.core.constants import SYSTEM_REQUEST_ID
@@ -15,6 +16,10 @@ from app.infra.db.session import (
 )
 from app.infra.middleware.request_id import (
     RequestIDMiddleware,
+)
+from app.infra.redis.session import (
+    close_redis,
+    set_redis,
 )
 from app.routes import register_routes
 
@@ -47,11 +52,36 @@ async def app_lifespan(app: FastAPI):
             extra={"request_id": SYSTEM_REQUEST_ID},
         )
         raise
+    logger.info(
+        "Initializing Redis",
+        extra={"request_id": SYSTEM_REQUEST_ID},
+    )
+    try:
+        redis = Redis.from_url(
+            config.REDIS_URL,
+            decode_responses=True,
+        )
+
+        redis.ping()
+
+        set_redis(redis)
+    except Exception:
+        logger.exception(
+            "Redis initialization failed. Shutting down application.",
+            extra={"request_id": SYSTEM_REQUEST_ID},
+        )
+        raise
+
     yield
     # ---- Shutdown logic here ----
     # e.g., close connections, flush buffers
     # if app.state.some_resource:
     #     await app.state.some_resource.close()
+    logger.info(
+        "Closing Redis",
+        extra={"request_id": SYSTEM_REQUEST_ID},
+    )
+    await close_redis()
     logger.info(
         "Closing database",
         extra={"request_id": SYSTEM_REQUEST_ID},
