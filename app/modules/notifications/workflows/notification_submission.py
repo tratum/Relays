@@ -11,13 +11,13 @@ from app.core.idempotency import (
     insert_idem_keys,
 )
 
+from ..constants import EmailNotificationProvider
 from ..db.notification_queries import (
     create_notification,
     get_notification,
 )
 from ..schemas.request import NotificationRequestBody
 
-API_KEY_ID = 1
 HTTP_METHOD = "POST"
 NOTIFICATIONS_PATH = "/v1/notifications"
 
@@ -49,6 +49,8 @@ async def submit_notification(
     conn,
     request: NotificationRequestBody,
     idempotency_key: str,
+    workspace_id: str,
+    api_key_id: str,
 ) -> tuple[dict[str, Any], bool]:
     recipient = resolve_recipient(
         request,
@@ -62,7 +64,7 @@ async def submit_notification(
         conn,
         idempotency_key,
         request_hash,
-        API_KEY_ID,
+        api_key_id,
         HTTP_METHOD,
         NOTIFICATIONS_PATH,
     )
@@ -74,6 +76,9 @@ async def submit_notification(
     if idempotency_record:
         notification_record = await create_notification(
             conn,
+            workspace_id=workspace_id,
+            api_key_id=api_key_id,
+            provider=EmailNotificationProvider.MAILRELAY,
             channel=request.channel,
             recipient=recipient,
             payload=request.payload.model_dump(mode="json"),
@@ -95,7 +100,7 @@ async def submit_notification(
     existing_idempotency_record = await get_idem_keys(
         conn,
         idempotency_key,
-        API_KEY_ID,
+        api_key_id,
         HTTP_METHOD,
         NOTIFICATIONS_PATH,
     )

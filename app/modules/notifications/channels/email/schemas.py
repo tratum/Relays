@@ -13,30 +13,33 @@ class EmailPayload(BaseModel):
     to: Email = Field(
         ...,
         min_length=4,
-        description="Recipient Email",
+        description="Recipient email address.",
         examples=["user@example.com"],
     )
     cc: list[Email] | None = Field(
         None,
-        description="List of CC email recipients",
+        description="List of CC recipients.",
         examples=[["cc1@example.com", "cc2@example.com"]],
     )
     bcc: list[Email] | None = Field(
         None,
-        description="List of BCC email recipients",
+        description="List of BCC recipients.",
         examples=[["bcc1@example.com", "bcc2@example.com"]],
     )
-    subject: str | None = Field(
-        None,
-        max_length=255,
-        description="Email subject line",
-        examples=["Welcome to Relays"],
-    )
-    body: str = Field(
+    subject: str = Field(
         ...,
         min_length=1,
-        description="Email body content",
-        examples=["Hello! Your notification has been sent."],
+        max_length=255,
+        description="Subject line of the email.",
+        examples=["Welcome to Relays"],
+    )
+    html_body: str = Field(
+        ...,
+        min_length=1,
+        description="HTML content of the email body.",
+        examples=[
+            "<h1>Welcome to Relays</h1><p>Your account has been created successfully.</p>"
+        ],
     )
 
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid")

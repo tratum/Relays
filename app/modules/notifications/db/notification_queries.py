@@ -1,47 +1,99 @@
+from typing import Any
+
+
 async def create_notification(
     conn,
+    workspace_id,
+    api_key_id,
     channel: str,
+    provider: str,
     recipient: str,
-    payload: dict,
-    metadata: dict | None = None,
+    payload: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
 ) -> dict:
     query = """
-    INSERT INTO notifications (channel, recipient, payload, metadata)
-    VALUES ($1, $2, $3::jsonb, $4::jsonb)
-    RETURNING id, state, created_at;
+    INSERT INTO notifications (
+        workspace_id,
+        api_key_id,
+        channel,
+        provider,
+        recipient,
+        payload,
+        metadata
+    )
+    VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6::jsonb,
+        $7::jsonb
+    )
+    RETURNING
+        id,
+        state,
+        created_at;
     """
 
     row = await conn.fetchrow(
         query,
+        workspace_id,
+        api_key_id,
         channel,
+        provider,
         recipient,
         payload,
         metadata,
     )
 
     if row is None:
-        raise RuntimeError("Insert failed: no row returned")
+        raise RuntimeError("Insert failed.")
 
     return dict(row)
 
 
 async def get_notification(conn, notification_id):
-    row = await conn.fetchrow(
-        "SELECT * FROM notifications WHERE id = $1;",
-        notification_id,
-    )
+    query = """
+    SELECT
+        id,
+        workspace_id,
+        api_key_id,
+        channel,
+        provider,
+        recipient,
+        payload,
+        metadata,
+        state,
+        attempt_count,
+        max_attempts,
+        next_retry_at,
+        queued_at,
+        last_attempt_at,
+        last_error,
+        sent_at,
+        created_at,
+        updated_at
+    FROM notifications
+    WHERE id = $1;
+    """
+
+    row = await conn.fetchrow(query, notification_id)
     return dict(row) if row else None
 
 
 async def mark_processing(conn, notification_id):
     query = """
     UPDATE notifications
-    SET state = 'processing',
+    SET
+        state = 'processing',
         updated_at = now()
-    WHERE id = $1
-    AND state IN ('created', 'queued')
+    WHERE
+        id = $1
+        AND state IN ('created', 'queued')
     RETURNING *;
     """
+
     row = await conn.fetchrow(query, notification_id)
     return dict(row) if row else None
 
@@ -49,81 +101,81 @@ async def mark_processing(conn, notification_id):
 async def mark_queued(conn, notification_id):
     query = """
     UPDATE notifications
-    SET state = 'queued',
+    SET
+        state = 'queued',
         queued_at = now(),
         updated_at = now()
-    WHERE id = $1
-    AND state IN ('created', 'processing');
+    WHERE
+        id = $1
+        AND state = 'created'
+    RETURNING *;
     """
-    await conn.execute(
-        query,
-        notification_id,
-    )
+
+    row = await conn.fetchrow(query, notification_id)
+    return dict(row) if row else None
 
 
 async def mark_sent(conn, notification_id):
     query = """
     UPDATE notifications
-    SET state = 'sent',
+    SET
+        state = 'sent',
         sent_at = now(),
-        updated_at = now(),
-        last_attempt_at = now()
-    WHERE id = $1;
+        last_attempt_at = now(),
+        updated_at = now()
+    WHERE id = $1
+    RETURNING *;
     """
-    await conn.execute(
-        query,
-        notification_id,
-    )
+
+    row = await conn.fetchrow(query, notification_id)
+    return dict(row) if row else None
 
 
-async def mark_failed(conn, notification_id, error):
+async def mark_failed(
+    conn,
+    notification_id,
+    error: str,
+):
     query = """
     UPDATE notifications
-    SET state = 'failed',
+    SET
+        state = 'failed',
         last_error = $2,
         last_attempt_at = now(),
         updated_at = now()
-    WHERE id = $1;
+    WHERE id = $1
+    RETURNING *;
     """
-    await conn.execute(
+
+    row = await conn.fetchrow(
         query,
         notification_id,
         error,
     )
 
-
-## Deprecated: This function was used for DB-driven retry scheduling (next_retry_at model).
-# Retries are now fully managed by Celery with exponential backoff.
-# Do not use this function to avoid double incrementing attempt_count and inconsistent state.
-
-# async def schedule_retry(conn, notification_id, next_retry, error):
-#     query = """
-#     UPDATE notifications
-#     SET attempt_count = attempt_count + 1,
-#         next_retry_at = $2,
-#         last_error = $3,
-#         state = 'queued',
-#         queued_at = now(),
-#         last_attempt_at = now(),
-#         updated_at = now()
-#     WHERE id = $1
-#     """
-#     await conn.execute(query, notification_id, next_retry, error)
+    return dict(row) if row else None
 
 
-async def increment_attempt_count(conn, notification_id) -> int:
+async def increment_attempt_count(
+    conn,
+    notification_id,
+) -> int:
     query = """
     UPDATE notifications
-    SET attempt_count = attempt_count + 1,
+    SET
+        attempt_count = attempt_count + 1,
         last_attempt_at = now(),
         updated_at = now()
     WHERE id = $1
     RETURNING attempt_count;
     """
+
     row = await conn.fetchrow(
         query,
         notification_id,
     )
-    if not row:
-        raise RuntimeError(f"Notification {notification_id} not found")
+
+    if row is None:
+        raise RuntimeError(f"Notification {notification_id} not found.")
+
     return row["attempt_count"]

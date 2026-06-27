@@ -4,6 +4,24 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =========================
+-- ENUM: idempotency_state
+-- =========================
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_type WHERE typname = 'idempotency_state'
+    ) THEN
+        CREATE TYPE idempotency_state AS ENUM (
+            'processing',
+            'completed',
+            'failed'
+        );
+    END IF;
+END
+$$;
+
+
+-- =========================
 -- ENUM: notification_state
 -- =========================
 DO $$
