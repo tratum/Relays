@@ -5,6 +5,7 @@ from fastapi import (
     Depends,
     Header,
     Path,
+    Request,
     Response,
     status,
 )
@@ -69,8 +70,9 @@ async def health_check():
     dependencies=[Depends(authenticate_api_key)],
 )
 async def create_notify(
-    req: NotificationRequestBody,
+    req: Request,
     response: Response,
+    body: NotificationRequestBody,
     idempotency_key: Annotated[
         UUID4,
         Header(
@@ -84,8 +86,10 @@ async def create_notify(
         async with conn.transaction():
             notification_record, is_new_request = await submit_notification(
                 conn=conn,
-                request=req,
+                request=body,
                 idempotency_key=str(idempotency_key),
+                workspace_id=req.state.workspace_id,
+                api_key_id=req.state.api_key_id,
             )
 
         # Queue Processing
@@ -149,10 +153,10 @@ async def get_notify(
         )
 
     if not result:
-      raise APIException(
-          status_code=status.HTTP_404_NOT_FOUND,
-          code=ErrorCode.NOT_FOUND,
-          message="Notification not found. Verify the notification_id and try again.",
-      )
+        raise APIException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code=ErrorCode.NOT_FOUND,
+            message="Notification not found. Verify the notification_id and try again.",
+        )
 
     return build_get_response(result)

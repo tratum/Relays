@@ -2,7 +2,7 @@ async def insert_idem_keys(
     conn,
     idem_key: str,
     request_hash,
-    api_key_id: int,
+    api_key_id: str,
     method: str,
     path: str,
 ):
@@ -34,7 +34,7 @@ async def insert_idem_keys(
 async def get_idem_keys(
     conn,
     idem_key: str,
-    api_key_id: int,
+    api_key_id: str,
     method: str,
     path: str,
 ):

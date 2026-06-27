@@ -1,12 +1,10 @@
 from app.infra.db.session import get_pool
 
 from ..constants import (
+    DeliveryStatus,
     NotificationState,
 )
-from ..db.delivery_attempts_queries import (
-    failed_delivery_attempt,
-    succesful_delivery_attempt,
-)
+from ..db.delivery_attempts_queries import record_delivery_attempt
 from ..db.notification_queries import (
     get_notification,
     increment_attempt_count,
@@ -57,11 +55,13 @@ async def handle_success(
                 notification_id,
             )
 
-            await succesful_delivery_attempt(
+            await record_delivery_attempt(
                 conn,
-                notification_id,
-                attempt_number,
-                provider_response,
+                notification_id=notification_id,
+                attempt_number=attempt_number,
+                status=DeliveryStatus.SUCCESS,
+                provider_message_id="",
+                provider_response=provider_response,
             )
 
             await mark_sent(
@@ -96,12 +96,19 @@ async def handle_failure(
                 notification_id,
             )
 
-            await failed_delivery_attempt(
+            await record_delivery_attempt(
                 conn,
-                notification_id,
-                attempt_number,
-                ("temporary_failure" if can_retry else "permanent_failure"),
-                error_message,
+                notification_id=notification_id,
+                attempt_number=attempt_number,
+                status=(
+                    DeliveryStatus.TEMPORARY_FAILURE
+                    if can_retry
+                    else DeliveryStatus.PERMANENT_FAILURE
+                ),
+                provider_response=None,
+                error_message=error_message,
+                provider_error_code=None,
+                provider_message_id=None,
             )
 
             if not can_retry or attempt_number >= claimed["max_attempts"]:

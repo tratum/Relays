@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   method TEXT NOT NULL,
   path TEXT NOT NULL,
   notification_id UUID,
-  status TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
+  status idempotency_state NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
 
