@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   id BIGSERIAL PRIMARY KEY,
   idempotency_key TEXT NOT NULL,
   request_hash TEXT NOT NULL,
-  api_key_id BIGINT NOT NULL,
+  api_key_id UUID NOT NULL,
   method TEXT NOT NULL,
   path TEXT NOT NULL,
   notification_id UUID,

@@ -4,9 +4,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import APIException
 from app.infra.db.session import get_pool
 from app.modules.auth.security.jwt import decode_access_token
-from app.modules.workspaces.db.context_queries import (
-    get_workspace_context,
-)
+from app.modules.workspaces.db.context_queries import get_workspace_context
 
 
 async def authenticate_jwt(
@@ -21,17 +19,17 @@ async def authenticate_jwt(
             message="Missing Authorization header",
         )
 
-    scheme, _, jwt_token = authorization.partition(" ")
+    scheme, _, access_token = authorization.partition(" ")
 
-    if scheme.lower() != "bearer" or not jwt_token:
+    if scheme.lower() != "bearer" or not access_token:
         raise APIException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             code=ErrorCode.UNAUTHORIZED,
             message="Invalid Authorization header",
         )
 
-    jwt_token = jwt_token.strip()
-    payload = decode_access_token(jwt_token)
+    access_token = access_token.strip()
+    payload = decode_access_token(access_token)
     pool = get_pool()
 
     async with pool.acquire() as conn:
