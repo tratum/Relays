@@ -1,7 +1,5 @@
-from typing import Annotated
-
 from asyncpg import UniqueViolationError
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import UUID4
 
 from app.core.error_codes import ErrorCode
@@ -9,7 +7,6 @@ from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
 from app.infra.guards.jwt import authenticate_jwt
 
-from ....workspaces.db.workspaces_queries import get_workspace_by_id
 from ...db.api_keys_queries import (
     create_api_key,
     get_api_key_by_id_and_workspace,
@@ -65,32 +62,11 @@ async def health_check():
     dependencies=[Depends(authenticate_jwt)],
 )
 async def create_api_key_route(
-    req: APIKeyRequestBody,
-    # TEMPORARY:
-    # Workspace context is supplied via request header.
-    #
-    # Once JWT authentication is implemented:
-    #
-    # 1. JWT Guard resolves request.state.user_id
-    # 2. Workspace membership is validated
-    # 3. Workspace context is resolved from the authenticated user
-    # 4. The X-Workspace-Id header will be removed
-    workspace_id: Annotated[
-        UUID4,
-        Header(
-            alias="X-Workspace-Id",
-        ),
-    ],
+    req: Request,
+    body: APIKeyRequestBody,
 ):
     pool = get_pool()
     async with pool.acquire() as conn:
-        if await get_workspace_by_id(conn, workspace_id) is None:
-            raise APIException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                code=ErrorCode.NOT_FOUND,
-                message="Workspace Not Found",
-            )
-
         key = generate_api_key()
         key_prefix = extract_prefix(key)
         key_hash = hash_api_key(key)
@@ -99,11 +75,12 @@ async def create_api_key_route(
             async with conn.transaction():
                 api_key_record = await create_api_key(
                     conn,
-                    workspace_id=workspace_id,
-                    name=req.name,
+                    workspace_id=req.state.workspace_id,
+                    created_by=req.state.user_id,
+                    name=body.name,
                     key_prefix=key_prefix,
                     key_hash=key_hash,
-                    expires_at=req.expires_at,
+                    expires_at=body.expires_at,
                 )
 
         except UniqueViolationError:
@@ -144,33 +121,15 @@ async def create_api_key_route(
         500: {"model": ErrorResponse},
     },
     response_model=list[APIKeyListResponseBody],
+    dependencies=[Depends(authenticate_jwt)],
 )
-async def list_api_keys_route(
-    workspace_id: Annotated[
-        UUID4,
-        Header(
-            alias="X-Workspace-Id",
-        ),
-    ],
-):
+async def list_api_keys_route(req: Request):
     pool = get_pool()
 
     async with pool.acquire() as conn:
-        workspace = await get_workspace_by_id(
-            conn,
-            workspace_id,
-        )
-
-        if workspace is None:
-            raise APIException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                code=ErrorCode.NOT_FOUND,
-                message="Workspace not found",
-            )
-
         api_keys = await list_workspace_api_keys(
             conn,
-            workspace_id,
+            req.state.workspace_id,
         )
 
         return [
@@ -210,32 +169,15 @@ async def list_api_keys_route(
 )
 async def get_api_key_route(
     api_key_id: UUID4,
-    workspace_id: Annotated[
-        UUID4,
-        Header(
-            alias="X-Workspace-Id",
-        ),
-    ],
+    req: Request,
 ):
     pool = get_pool()
 
     async with pool.acquire() as conn:
-        workspace = await get_workspace_by_id(
-            conn,
-            workspace_id,
-        )
-
-        if workspace is None:
-            raise APIException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                code=ErrorCode.NOT_FOUND,
-                message="Workspace not found",
-            )
-
         api_key = await get_api_key_by_id_and_workspace(
             conn,
             api_key_id,
-            workspace_id,
+            req.state.workspace_id,
         )
 
         if api_key is None:
@@ -278,35 +220,15 @@ async def get_api_key_route(
     response_model=APIKeyResponseBody,
     dependencies=[Depends(authenticate_jwt)],
 )
-async def revoke_api_key_route(
-    api_key_id: UUID4,
-    workspace_id: Annotated[
-        UUID4,
-        Header(
-            alias="X-Workspace-Id",
-        ),
-    ],
-):
+async def revoke_api_key_route(api_key_id: UUID4, req: Request):
     pool = get_pool()
 
     async with pool.acquire() as conn:
-        workspace = await get_workspace_by_id(
-            conn,
-            workspace_id,
-        )
-
-        if workspace is None:
-            raise APIException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                code=ErrorCode.NOT_FOUND,
-                message="API Key not found",
-            )
-
         async with conn.transaction():
             revoked_api_key = await revoke_api_key(
                 conn,
                 api_key_id,
-                workspace_id,
+                req.state.workspace_id,
             )
 
         if revoked_api_key is None:

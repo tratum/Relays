@@ -5,6 +5,7 @@ from uuid import UUID
 async def create_api_key(
     conn,
     workspace_id: UUID,
+    created_by: UUID,
     name: str,
     key_prefix: str,
     key_hash: str,
@@ -13,12 +14,13 @@ async def create_api_key(
     query = """
     INSERT INTO api_keys (
       workspace_id,
+      created_by,
       name,
       key_prefix,
       key_hash,
-      expires_at
+      expires_at,
     )
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING
       id,
       workspace_id,
@@ -35,6 +37,7 @@ async def create_api_key(
     row = await conn.fetchrow(
         query,
         workspace_id,
+        created_by,
         name,
         key_prefix,
         key_hash,

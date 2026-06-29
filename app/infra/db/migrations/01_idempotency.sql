@@ -8,10 +8,6 @@ ALTER TABLE idempotency_keys
 ALTER COLUMN request_hash TYPE CHAR(64);
 
 ALTER TABLE idempotency_keys
-ALTER COLUMN api_key_id TYPE UUID
-USING api_key_id::uuid;
-
-ALTER TABLE idempotency_keys
 ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 -- -----------------
