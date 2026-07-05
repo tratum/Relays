@@ -1,21 +1,27 @@
+from app.infra.queues.notification_queue import NotificationQueue
 from app.infra.workers.celery import celery_conn
 from app.infra.workers.runtime import async_to_sync
 from app.modules.notifications.workflows.notification_delivery import (
-    PermanentFailureException,
     deliver_notification,
+)
+from app.modules.notifications.workflows.retry_scheduler import (
+    retry_scheduled_notifications,
 )
 
 
-@celery_conn.task(bind=True, max_retries=5)
-def send_email_task(self, notification_id: str):
-    try:
-        return async_to_sync(deliver_notification(notification_id))
+@celery_conn.task
+def deliver_notification_task(notification_id: str):
+    return async_to_sync(deliver_notification(notification_id))
 
-    # Do NOT retry
-    except PermanentFailureException:
-        raise
 
-    # Retry with exponential backoff
-    except Exception as exc:
-        countdown = 2**self.request.retries
-        raise self.retry(exc=exc, countdown=countdown)
+@celery_conn.task
+def retry_scheduler_task():
+    notifications = async_to_sync(retry_scheduled_notifications())
+
+    for notification in notifications:
+        NotificationQueue.enqueue(
+            notification_id=str(notification["id"]),
+            channel=notification["channel"],
+        )
+
+    return len(notifications)

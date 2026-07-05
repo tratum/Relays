@@ -1,134 +1,118 @@
 from app.infra.db.session import get_pool
 
+from ..channels.email.schemas import EmailPayload
 from ..constants import (
     DeliveryStatus,
     NotificationState,
 )
-from ..db.delivery_attempts_queries import record_delivery_attempt
+from ..db.delivery_attempts_queries import (
+    record_delivery_attempt,
+)
 from ..db.notification_queries import (
     get_notification,
     increment_attempt_count,
     mark_failed,
-    mark_processing,
     mark_sent,
+    schedule_retry,
 )
-from ..providers.email.fake import (
-    FakeMailProvider,
+from ..providers.email.registry import (
+    email_provider_registry,
+)
+from ..providers.email.result import (
+    ProviderResult,
+)
+from ..retry.policy import (
+    calculate_next_retry_time,
 )
 
 
 class PermanentFailureException(Exception):
-    """Notification can no longer be retried."""
+    """Notification can no longer be processed."""
 
 
-# --------------------------------------------------
-# Validation
-# --------------------------------------------------
-
-
-def validate_notification(notification: dict) -> None:
+def validate_delivery_eligibility(notification: dict) -> None:
     if notification["state"] in (
         NotificationState.SENT,
         NotificationState.FAIL,
     ):
-        raise PermanentFailureException("Notification already completed")
+        raise PermanentFailureException(
+            f"Notification {notification['id']} has already reached a terminal state."
+        )
 
     if notification["attempt_count"] >= notification["max_attempts"]:
-        raise PermanentFailureException("Max attempts reached")
+        raise PermanentFailureException(
+            f"Notification {notification['id']} has exhausted all retry attempts."
+        )
 
 
-# --------------------------------------------------
-# Success Handling
-# --------------------------------------------------
-
-
-async def handle_success(
-    notification_id: str,
-    provider_response: dict,
-):
+async def persist_delivery_result(
+    notification: dict,
+    result: ProviderResult,
+) -> None:
     pool = get_pool()
 
     async with pool.acquire() as conn:
         async with conn.transaction():
             attempt_number = await increment_attempt_count(
                 conn,
-                notification_id,
+                notification["id"],
             )
 
             await record_delivery_attempt(
                 conn,
-                notification_id=notification_id,
+                notification_id=notification["id"],
                 attempt_number=attempt_number,
-                status=DeliveryStatus.SUCCESS,
-                provider_message_id="",
-                provider_response=provider_response,
+                status=result.status,
+                provider=result.provider,
+                provider_message_id=result.provider_message_id,
+                provider_error_code=result.provider_error_code,
+                error_message=result.error_message,
+                raw_provider_response=result.raw_provider_response,
             )
 
-            await mark_sent(
-                conn,
-                notification_id,
-            )
+            match result.status:
+                case DeliveryStatus.SUCCESS:
+                    await mark_sent(
+                        conn,
+                        notification["id"],
+                    )
 
+                case DeliveryStatus.PERMANENT_FAILURE:
+                    await mark_failed(
+                        conn,
+                        notification["id"],
+                        result.error_message or "Unknown Provider Error",
+                    )
 
-# --------------------------------------------------
-# Failure Handling
-# --------------------------------------------------
+                case DeliveryStatus.TEMPORARY_FAILURE:
+                    if attempt_number >= notification["max_attempts"]:
+                        await mark_failed(
+                            conn,
+                            notification["id"],
+                            result.error_message
+                            or "Maximum retry attempts reached.",
+                        )
+                        return
 
+                    next_retry_at = calculate_next_retry_time(
+                        attempt_number=attempt_number,
+                    )
 
-async def handle_failure(
-    notification_id: str,
-    claimed: dict,
-    error: Exception,
-):
-    pool = get_pool()
+                    await schedule_retry(
+                        conn,
+                        notification["id"],
+                        next_retry_at,
+                    )
 
-    error_message = str(error)
-
-    can_retry = FakeMailProvider.can_retry(
-        error,
-        claimed,
-    )
-
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            attempt_number = await increment_attempt_count(
-                conn,
-                notification_id,
-            )
-
-            await record_delivery_attempt(
-                conn,
-                notification_id=notification_id,
-                attempt_number=attempt_number,
-                status=(
-                    DeliveryStatus.TEMPORARY_FAILURE
-                    if can_retry
-                    else DeliveryStatus.PERMANENT_FAILURE
-                ),
-                provider_response=None,
-                error_message=error_message,
-                provider_error_code=None,
-                provider_message_id=None,
-            )
-
-            if not can_retry or attempt_number >= claimed["max_attempts"]:
-                await mark_failed(
-                    conn,
-                    notification_id,
-                    error_message,
-                )
-
-                raise PermanentFailureException(error_message)
-
-
-# --------------------------------------------------
-# Notification Processing
-# --------------------------------------------------
+                case _:
+                    raise RuntimeError(
+                        f"Unsupported delivery status: {result.status!r}"
+                    )
 
 
 async def deliver_notification(
     notification_id: str,
-):
+) -> None:
     pool = get_pool()
 
     async with pool.acquire() as conn:
@@ -137,42 +121,26 @@ async def deliver_notification(
             notification_id,
         )
 
-        # Guard Rails
+    if notification is None:
+        return
 
-        if not notification:
-            return
+    validate_delivery_eligibility(
+        notification,
+    )
 
-        validate_notification(
-            notification,
-        )
+    payload = EmailPayload.model_validate(
+        notification["payload"],
+    )
 
-        claimed = await mark_processing(
-            conn,
-            notification_id,
-        )
+    provider = email_provider_registry.get(
+        notification["provider"],
+    )
 
-        # Allow retry workers to continue
-        # processing an already claimed record
+    result = await provider.send(
+        payload,
+    )
 
-        if not claimed:
-            claimed = notification
-
-    try:
-        provider_response = await FakeMailProvider.send(
-            claimed,
-            claimed["attempt_count"] + 1,
-        )
-
-        await handle_success(
-            notification_id,
-            provider_response,
-        )
-
-    except Exception as exc:
-        await handle_failure(
-            notification_id,
-            claimed,
-            exc,
-        )
-
-        raise
+    await persist_delivery_result(
+        notification,
+        result,
+    )

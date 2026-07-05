@@ -16,6 +16,19 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     JWT_ALGORITHM: str
     JWT_SECRET: str
+    ## ------------------
+    ## Provider Details
+    ## ------------------
+    MAILRELAY_BASE_URL: str
+    MAILRELAY_API_TOKEN: str
+    MAILRELAY_SENDER_EMAIL: str
+    MAILRELAY_SENDER_NAME: str
+    MAILRELAY_REQUEST_TIMEOUT: int
+    ## ---------------------
+    ## Exponential Backoff
+    ## ---------------------
+    INITIAL_RETRY_DELAY_SECONDS: int
+    MAX_RETRY_DELAY_SECONDS: int
 
     @property
     def DEBUG(self) -> bool:

@@ -50,7 +50,12 @@ services:
   api:
     build: .
     container_name: relays-api
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+    hostname: api
+    command: >
+      uv run uvicorn
+      app.main:app
+      --host 0.0.0.0
+      --port 8000
     ports:
       - "8000:8000"
     volumes:
@@ -62,10 +67,16 @@ services:
     env_file:
       - .env.podman
 
-  worker:
+  email-worker:
     build: .
-    container_name: relays-worker
-    command: uv run celery -A app.infra.workers.celery.celery_conn worker -Q email -l info -E
+    hostname: relays-email-worker
+    command: >
+      uv run celery
+      -A app.infra.workers.celery.celery_conn
+      worker
+      -Q email
+      -l info
+      -E
     volumes:
       - .:/app:z
       - /app/.venv
@@ -74,3 +85,84 @@ services:
       - redis
     env_file:
       - .env.podman
+
+  scheduler:
+    build: .
+    container_name: relays-worker-scheduler
+    hostname: scheduler
+    command: >
+      uv run celery
+      -A app.infra.workers.celery.celery_conn
+      worker
+      -Q scheduler
+      -l info
+    volumes:
+      - .:/app:z
+      - /app/.venv
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - .env.podman
+
+  beat:
+    build: .
+    container_name: relays-beat
+    hostname: beat
+    command: >
+      uv run celery
+      -A app.infra.workers.celery.celery_conn
+      beat
+      -l info
+    volumes:
+      - .:/app:z
+      - /app/.venv
+    depends_on:
+      - redis
+    env_file:
+      - .env.podman
+
+  # ------------------------------------------------------------------------
+  # Future Notification Channel Workers
+  # Uncomment these services as additional notification channels are added.
+  # ------------------------------------------------------------------------
+
+  # worker-sms:
+  #   build: .
+  #   container_name: relays-worker-sms
+  #   hostname: sms-worker
+  #   command: >
+  #     uv run celery
+  #     -A app.infra.workers.celery.celery_conn
+  #     worker
+  #     -Q sms
+  #     -l info
+  #     -E
+  #   volumes:
+  #     - .:/app:z
+  #     - /app/.venv
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #   env_file:
+  #     - .env.podman
+
+  # worker-webhook:
+  #   build: .
+  #   container_name: relays-worker-webhook
+  #   hostname: webhook-worker
+  #   command: >
+  #     uv run celery
+  #     -A app.infra.workers.celery.celery_conn
+  #     worker
+  #     -Q webhook
+  #     -l info
+  #     -E
+  #   volumes:
+  #     - .:/app:z
+  #     - /app/.venv
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #   env_file:
+  #     - .env.podman
