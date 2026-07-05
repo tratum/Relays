@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
   attempt_number INT NOT NULL,
   status delivery_status NOT NULL,
   error_message TEXT,
-  provider_response JSONB,
+  raw_provider_response JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
   -- CONSTRAINTS

@@ -82,22 +82,6 @@ async def get_notification(conn, notification_id):
     return dict(row) if row else None
 
 
-async def mark_processing(conn, notification_id):
-    query = """
-    UPDATE notifications
-    SET
-        state = 'processing',
-        updated_at = now()
-    WHERE
-        id = $1
-        AND state IN ('created', 'queued')
-    RETURNING *;
-    """
-
-    row = await conn.fetchrow(query, notification_id)
-    return dict(row) if row else None
-
-
 async def mark_queued(conn, notification_id):
     query = """
     UPDATE notifications
@@ -122,7 +106,8 @@ async def mark_sent(conn, notification_id):
         state = 'sent',
         sent_at = now(),
         last_attempt_at = now(),
-        updated_at = now()
+        updated_at = now(),
+        next_retry_at = NULL
     WHERE id = $1
     RETURNING *;
     """
@@ -142,7 +127,8 @@ async def mark_failed(
         state = 'failed',
         last_error = $2,
         last_attempt_at = now(),
-        updated_at = now()
+        updated_at = now(),
+        next_retry_at = NULL
     WHERE id = $1
     RETURNING *;
     """
@@ -179,3 +165,53 @@ async def increment_attempt_count(
         raise RuntimeError(f"Notification {notification_id} not found.")
 
     return row["attempt_count"]
+
+
+async def schedule_retry(
+    conn,
+    notification_id,
+    next_retry_at,
+):
+    query = """
+    UPDATE notifications
+    SET
+        state = 'queued',
+        next_retry_at = $2,
+        updated_at = now()
+    WHERE id = $1
+    RETURNING *;
+    """
+
+    row = await conn.fetchrow(query, notification_id, next_retry_at)
+
+    return dict(row) if row else None
+
+
+async def claim_retryable_notifications(conn, limit: int = 100):
+    query = """
+    WITH claimed AS (
+        SELECT id
+        FROM notifications
+        WHERE
+          state = 'queued'
+          AND next_retry_at IS NOT NULL
+          AND next_retry_at <= now()
+        ORDER BY
+          next_retry_at ASC,
+          created_at ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+    )
+    UPDATE notifications n
+    SET
+      state = 'processing',
+      next_retry_at = NULL,
+      updated_at = now()
+    FROM claimed
+    WHERE n.id = claimed.id
+    RETURNING n.*;
+    """
+
+    rows = await conn.fetchrow(query, limit)
+
+    return [dict(row) for row in rows]

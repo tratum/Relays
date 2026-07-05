@@ -1,6 +1,4 @@
-from typing import Any
-
-## Unused Code Removed
+from ..constants import DeliveryStatus, EmailNotificationProviders
 
 
 async def record_delivery_attempt(
@@ -8,21 +6,23 @@ async def record_delivery_attempt(
     *,
     notification_id,
     attempt_number: int,
-    status: str,
-    provider_response: dict[str, Any] | None = None,
+    status: DeliveryStatus,
+    provider: EmailNotificationProviders,
+    raw_provider_response: dict | None = None,
     error_message: str | None = None,
     provider_error_code: str | None = None,
     provider_message_id: str | None = None,
-):
+) -> None:
     query = """
     INSERT INTO delivery_attempts (
         notification_id,
         attempt_number,
         status,
+        provider,
         error_message,
         provider_error_code,
         provider_message_id,
-        provider_response
+        raw_provider_response
     )
     VALUES (
         $1,
@@ -31,7 +31,8 @@ async def record_delivery_attempt(
         $4,
         $5,
         $6,
-        $7::jsonb
+        $7,
+        $8::jsonb
     )
     RETURNING id;
     """
@@ -41,10 +42,11 @@ async def record_delivery_attempt(
         notification_id,
         attempt_number,
         status,
+        provider,
         error_message,
         provider_error_code,
         provider_message_id,
-        provider_response,
+        raw_provider_response,
     )
 
     if row is None:

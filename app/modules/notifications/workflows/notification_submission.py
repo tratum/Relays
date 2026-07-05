@@ -11,7 +11,7 @@ from app.core.idempotency import (
     insert_idem_keys,
 )
 
-from ..constants import EmailNotificationProvider
+from ..constants import EmailNotificationProviders
 from ..db.notification_queries import (
     create_notification,
     get_notification,
@@ -78,7 +78,7 @@ async def submit_notification(
             conn,
             workspace_id=workspace_id,
             api_key_id=api_key_id,
-            provider=EmailNotificationProvider.MAILRELAY,
+            provider=EmailNotificationProviders.MAILRELAY,
             channel=request.channel,
             recipient=recipient,
             payload=request.payload.model_dump(mode="json"),

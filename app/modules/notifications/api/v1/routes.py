@@ -15,7 +15,7 @@ from app.core.error_codes import ErrorCode
 from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
 from app.infra.guards.api_key import authenticate_api_key
-from app.infra.queues.email_queue import EmailQueue
+from app.infra.queues.notification_queue import NotificationQueue
 
 from ...db.notification_queries import (
     get_notification,
@@ -92,34 +92,48 @@ async def create_notify(
                 api_key_id=req.state.api_key_id,
             )
 
-        # Queue Processing
+    # --------------------------------------------------
+    # Queue Processing
+    # --------------------------------------------------
 
-        if is_new_request:
-            try:
-                EmailQueue.enqueue(str(notification_record["id"]))
-                async with pool.acquire() as conn:
-                    await mark_queued(
-                        conn,
-                        notification_record["id"],
-                    )
+    if is_new_request:
+        try:
+            NotificationQueue.enqueue(
+                str(notification_record["id"]),
+                notification_record["channel"],
+            )
 
-            except Exception:
-                raise APIException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    code=ErrorCode.INTERNAL_ERROR,
-                    message="Failed to Enqueue Notification for Processing. Please retry.",
+            async with pool.acquire() as conn:
+                await mark_queued(
+                    conn,
+                    notification_record["id"],
                 )
 
-            response.status_code = (
-                status.HTTP_201_CREATED
-                if is_new_request
-                else status.HTTP_200_OK
-            )
-            response.headers["Location"] = (
-                f"/v1/notifications/{notification_record['id']}"
+        except Exception:
+            raise APIException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                code=ErrorCode.INTERNAL_ERROR,
+                message=(
+                    "Failed to enqueue notification for "
+                    "processing. Please retry."
+                ),
             )
 
-            return build_post_response(notification_record)
+    # --------------------------------------------------
+    # Response
+    # --------------------------------------------------
+
+    response.status_code = (
+        status.HTTP_201_CREATED if is_new_request else status.HTTP_200_OK
+    )
+
+    response.headers["Location"] = (
+        f"/v1/notifications/{notification_record['id']}"
+    )
+
+    return build_post_response(
+        notification_record,
+    )
 
 
 # --------------------------------------------------

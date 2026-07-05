@@ -18,7 +18,7 @@ async def create_api_key(
       name,
       key_prefix,
       key_hash,
-      expires_at,
+      expires_at
     )
     VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING
@@ -52,7 +52,7 @@ async def create_api_key(
 
 async def get_api_key(
     conn,
-    api_key_id: str,
+    api_key_id: UUID,
 ):
     query = """
     SELECT
