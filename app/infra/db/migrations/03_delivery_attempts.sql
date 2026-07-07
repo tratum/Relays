@@ -7,7 +7,7 @@ BEGIN;
 ALTER TABLE delivery_attempts
 ADD COLUMN provider_message_id TEXT,
 ADD COLUMN provider_error_code TEXT,
-ADD COLUMN provider TEXT;
+ADD COLUMN provider TEXT NOT NULL;
 
 -- -------------
 -- Add Indexes

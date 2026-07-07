@@ -682,7 +682,9 @@ Delivery Attempts
 
 Represents a notification submitted for asynchronous delivery.
 
-A notification describes the intent to deliver a message rather than the outcome of delivery.
+A notification is the authoritative record of a delivery request and its lifecycle.
+
+While individual provider interactions are stored separately as Delivery Attempts, the notification itself tracks the current processing state, retry scheduling, and overall delivery outcome.
 
 | Property        | Value               |
 | --------------- | ------------------- |
@@ -693,51 +695,65 @@ A notification describes the intent to deliver a message rather than the outcome
 
 ## Schema
 
-| Column          | Type                 | Nullable | Description                   |
-| --------------- | -------------------- | -------- | ----------------------------- |
-| id              | UUID                 | ❌       | Primary key                   |
-| channel         | TEXT                 | ❌       | Notification channel          |
-| recipient       | TEXT                 | ❌       | Destination address           |
-| payload         | JSONB                | ❌       | Channel payload               |
-| metadata        | JSONB                | ❌       | Internal metadata             |
-| state           | `notification_state` | ❌       | Current processing state      |
-| attempt_count   | INTEGER              | ❌       | Number of delivery attempts   |
-| max_attempts    | INTEGER              | ❌       | Maximum retry count           |
-| next_retry_at   | TIMESTAMPTZ          | ✅       | Scheduled retry time          |
-| queued_at       | TIMESTAMPTZ          | ✅       | Queue timestamp               |
-| last_attempt_at | TIMESTAMPTZ          | ✅       | Last delivery attempt         |
-| last_error      | TEXT                 | ✅       | Last provider error           |
-| sent_at         | TIMESTAMPTZ          | ✅       | Successful delivery timestamp |
-| created_at      | TIMESTAMPTZ          | ❌       | Creation timestamp            |
-| updated_at      | TIMESTAMPTZ          | ❌       | Last update timestamp         |
+| Column          | Type                 | Nullable | Description                             |
+| --------------- | -------------------- | -------- | --------------------------------------- |
+| id              | UUID                 | ❌       | Primary key                             |
+| channel         | TEXT                 | ❌       | Notification channel                    |
+| recipient       | TEXT                 | ❌       | Destination address                     |
+| payload         | JSONB                | ❌       | Channel payload                         |
+| metadata        | JSONB                | ❌       | Internal metadata                       |
+| state           | `notification_state` | ❌       | Current processing state                |
+| attempt_count   | INTEGER              | ❌       | Number of delivery attempts             |
+| max_attempts    | INTEGER              | ❌       | Maximum retry count                     |
+| next_retry_at   | TIMESTAMPTZ          | ✅       | Scheduled retry time                    |
+| queued_at       | TIMESTAMPTZ          | ✅       | Queue timestamp                         |
+| last_attempt_at | TIMESTAMPTZ          | ✅       | Last delivery attempt                   |
+| last_error      | TEXT                 | ✅       | Last provider error                     |
+| sent_at         | TIMESTAMPTZ          | ✅       | Successful delivery timestamp           |
+| created_at      | TIMESTAMPTZ          | ❌       | Creation timestamp                      |
+| updated_at      | TIMESTAMPTZ          | ❌       | Last update timestamp                   |
+| workspace_id    | UUID                 | ❌       | Owning Workspace                        |
+| api_key_id      | UUID                 | ❌       | API Key used to create the notification |
+| provider        | TEXT                 | ❌       | Provider Selected For Delivery          |
 
 ## Constraints
 
 - Primary Key (`id`)
+- Foreign Key (`workspace_id`)
+- Foreign Key (`api_key_id`)
 - Various state validation constraints
 
 ## Indexes
 
-| Index                      | Purpose               |
-| -------------------------- | --------------------- |
-| `idx_notification_channel` | Filter by channel     |
-| `idx_notification_state`   | Worker processing     |
-| `idx_notification_retry`   | Retry scheduling      |
-| `idx_notification_created` | Chronological queries |
+| Index                                 | Purpose               |
+| ------------------------------------- | --------------------- |
+| `idx_notification_channel`            | Filter by channel     |
+| `idx_notification_state`              | Worker processing     |
+| `idx_notification_retry`              | Retry scheduling      |
+| `idx_notification_created`            | Chronological queries |
+| `idx_notifications_workspace`         |                       |
+| `idx_notifications_api_key`           |                       |
+| `idx_notifications_workspace_created` |                       |
 
 ## Relationships
 
 ### Referenced By
 
 - `delivery_attempts.notification_id`
+- `workspaces.id`
+- `api_keys.id`
 
 ## Design Notes
 
-- PostgreSQL is the source of truth for notification state.
+- PostgreSQL is the authoritative source of notification state.
 - Workers always reload notifications from PostgreSQL before processing.
-- Retry scheduling is driven by `next_retry_at`.
-- State transitions occur atomically within database transactions.
-- Notification payloads are stored as JSONB to support multiple channels.
+- Notification lifecycle transitions occur atomically inside database transactions.
+- Retry scheduling is driven by `next_retry_at` rather than Celery's built-in retry mechanism.
+- Workers never rely on Redis for notification state.
+- Redis acts only as a transport mechanism between API servers and workers.
+- `attempt_count` records the total number of delivery attempts executed for the notification.
+- Every delivery attempt creates an immutable record in `delivery_attempts`.
+- Notification payloads are stored as JSONB to support multiple notification channels without schema changes.
 
 ---
 
@@ -758,15 +774,18 @@ Delivery Attempts are append-only and provide a complete audit trail of delivery
 
 ## Schema
 
-| Column            | Type              | Nullable | Description               |
-| ----------------- | ----------------- | -------- | ------------------------- |
-| id                | UUID              | ❌       | Primary key               |
-| notification_id   | UUID              | ❌       | Parent notification       |
-| attempt_number    | INTEGER           | ❌       | Sequential attempt number |
-| status            | `delivery_status` | ❌       | Attempt outcome           |
-| error_message     | TEXT              | ✅       | Provider error            |
-| provider_response | JSONB             | ✅       | Raw provider response     |
-| created_at        | TIMESTAMPTZ       | ❌       | Attempt timestamp         |
+| Column                | Type              | Nullable | Description                           |
+| --------------------- | ----------------- | -------- | ------------------------------------- |
+| id                    | UUID              | ❌       | Primary key                           |
+| notification_id       | UUID              | ❌       | Parent notification                   |
+| attempt_number        | INTEGER           | ❌       | Sequential attempt number             |
+| status                | `delivery_status` | ❌       | Attempt outcome                       |
+| error_message         | TEXT              | ✅       | Provider error                        |
+| raw_provider_response | JSONB             | ✅       | Raw provider response                 |
+| created_at            | TIMESTAMPTZ       | ❌       | Attempt timestamp                     |
+| provider_message_id   | TEXT              | ✅       | Provider-generated message identifier |
+| provider_error_code   | TEXT              | ✅       | Provider-specific error code          |
+| provider              | TEXT              | x        | Provider used for the attempt         |
 
 ## Constraints
 
@@ -776,9 +795,10 @@ Delivery Attempts are append-only and provide a complete audit trail of delivery
 
 ## Indexes
 
-| Index                                | Purpose                            |
-| ------------------------------------ | ---------------------------------- |
-| `idx_delivery_attempts_notification` | Lookup attempts for a notification |
+| Index                                       | Purpose                            |
+| ------------------------------------------- | ---------------------------------- |
+| `idx_delivery_attempts_notification`        | Lookup attempts for a notification |
+| `idx_delivery_attempt_notification_created` |                                    |
 
 ## Relationships
 
@@ -789,10 +809,64 @@ Delivery Attempts are append-only and provide a complete audit trail of delivery
 ## Design Notes
 
 - Delivery Attempts are immutable after creation.
-- Every retry creates a new record.
-- Historical attempts are never overwritten.
-- Provider responses are preserved for debugging and auditing.
-- Attempt numbering is guaranteed to be unique per notification.
+- Every execution of a provider creates exactly one Delivery Attempt.
+- Historical attempts are never modified or deleted.
+- Attempt numbering is unique per notification.
+- Provider responses and provider-specific errors are preserved for debugging and auditing.
+- Delivery Attempts are append-only and should never be treated as the source of notification state.
+- The current notification state is always determined from the parent notification rather than by replaying Delivery Attempts.
+
+---
+
+# Notification Lifecycle
+
+Notifications transition through a finite lifecycle managed exclusively by background workers.
+
+```text
+                    created
+                      │
+                      ▼
+                    queued
+                      │
+                      ▼
+                    processing
+   -------------------├───────────────┐
+   │                  │               │
+   ▼                  ▼               ▼
+permanent_failure   sent          temporary failure
+   │                                    │
+   ▼                                    ▼
+  failed                             queued
+                                        │
+                                        ▼
+                                  processing
+                                        │
+                                        ▼
+                                    failed
+```
+
+Lifecycle transitions are persisted atomically within PostgreSQL.
+
+Redis transports work to workers but does not determine notification state.
+
+Retries are represented by transitioning a notification back to the `queued` state while recording the next eligible execution time in `next_retry_at`.
+
+---
+
+# Attempt Counting
+
+Each notification maintains a cumulative `attempt_count`.
+
+This value is incremented exactly once for every provider execution, regardless of whether the attempt succeeds, fails permanently, or fails temporarily.
+
+The value serves multiple purposes:
+
+- determines retry eligibility
+- calculates retry backoff
+- enforces `max_attempts`
+- provides a fast summary without querying historical attempts
+
+Although every attempt is also recorded in `delivery_attempts`, `attempt_count` is updated atomically with the corresponding Delivery Attempt to ensure both remain consistent under concurrent worker execution.
 
 ---
 
@@ -1017,6 +1091,8 @@ Potential additions include:
 - Scheduled notifications
 - Notification templates
 - Provider routing rules
+- Dead-letter queue support
+- Notification expiration
 - Delivery webhooks
 
 ## Billing

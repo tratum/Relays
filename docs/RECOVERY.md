@@ -1,354 +1,250 @@
-# Recovery and Reconciliation Model
+# Recovery & Reconciliation
 
 ---
 
-## Purpose
+# Purpose
 
-This document defines the recovery and reconciliation model for Relays.
+This document defines the purpose, scope, and design principles of the Recovery & Reconciliation subsystem in Relays.
 
-Recovery is responsible for restoring **eventual progress (liveness)** in the system when execution is interrupted due to crashes, queue loss, or partial failures, **without violating correctness guarantees.**
+Unlike the Retry Engine, which handles expected temporary delivery failures, the Recovery subsystem is responsible for restoring the system after unexpected infrastructure or process failures.
 
-Recovery does **not** deliver notifications or decide outcomes. It exists solely to ensure that **valid notification intents eventually re-enter execution.**
+Recovery exists to ensure that notifications never become permanently stranded because of failures outside the normal delivery lifecycle.
 
----
-
-## Core Principle
-
-    PostgreSQL is the source of truth for both execution intent and recovery.
-
-Redis is treated as a **best-effort execution mechanism**. Recovery is a **DB-driven reconciliation process** that restores execution when Redis or workers fails.
+> **Current Status**
+>
+> The Recovery & Reconciliation subsystem has **not yet been implemented**.
+>
+> This document serves as a design specification for future development and should not be interpreted as describing current system behaviour.
 
 ---
 
-## Recovery Contract (Non-Negotiable Invariants)
+# Why Recovery Exists
 
-Recovery logic MUST obey the following rules:
+Distributed systems fail in ways that normal business logic cannot anticipate.
 
-### **Recovery is allowed to:**
+Examples include:
 
-- Re-enqueue execution jobs
-- Restore forward progress
-- Reconcile DB intent with missing execution
+- Worker process crashes
+- Container termination
+- Host machine failure
+- Redis outages
+- Database connection loss
+- Network partitions
+- Deployment interruptions
 
-### **Recovery is NOT allowed to:**
+These failures may interrupt notification processing after work has already begun.
 
-- Mark a notification as `sent` or `failed`
-- Delete or modify delivery attempts
-- Rewrite historical facts
-- Bypass worker guard rails
-- Perform irreversible side effects (e.g., sending email)
+Unlike normal provider failures, these situations are not delivery outcomes.
 
-### Recovery does not guarantee uniqueness
+They are infrastructure failures.
 
-Recovery may enqueue duplicate execution jobs.
-
-This is acceptable because:
-
-- The system uses at-least-once delivery semantics
-- Workers always re-validate notification state from the DB
-- Invalid executions are safely refused by guard rails
-
-Recovery prioritizes restoring progress over minimizing duplicate scheduling.
-
-      **Recovery restores execution, not outcomes.**
-
-All irreversible actions remain exclusively owned by workers.
+Recovery exists to detect and safely restore notifications affected by these failures.
 
 ---
 
-## Recovery Trigger Conditions
+# Retry Engine vs Recovery
 
-Recovery is required when execution diverges from persisted intent.
+The Retry Engine and Recovery subsystem solve fundamentally different problems.
 
-The following states are considered _recoverable system failures_.
+## Retry Engine
 
-<br>
+The Retry Engine handles expected delivery failures returned by providers.
 
-### Case 1: Notification Stuck in `processing`
+Examples include:
 
-**Condition**
+- Network timeout
+- HTTP 429
+- HTTP 503
+- Temporary provider outage
 
-- state = processing
-- updated_at < now() - PROCESSING_TIMEOUT
-- Notification is non-terminal
+The provider successfully returns a delivery outcome.
 
-**Cause**
+The worker persists retry intent.
 
-- Worker crashed after claiming the notification
-- No further jobs exist for this notification
+The Retry Scheduler later re-enqueues the notification.
 
-**Nature of the Failure**
-
-- Liveness failure
-- Correctness is preserved
-- Progress is blocked
-
-**Recovery Action**
-
-- Re-enqueue the notification for execution
-- Do not modify attempt history
-- Worker will re-evaluate eligibility and retry safely
-
-**Rationale**
-
-The system intentionally avoids auto-resetting processing state during normal execution to prevent unsafe duplicate deliveries.
-Recovery reintroduces execution only after sufficient time has passed to assume worker failure.
-
-<br>
-
-### Case 2: Retry Intent Exists but No Execution Job
-
-**Condition**
-
-- `state` is non-terminal
-- `next_retry_at <= now()`
-- Notification has no active job in Redis
-
-**Cause**
-
-- Worker crashed after persisting retry intent
-- Redis lost delayed job
-- Redis restart or data loss
-
-**Nature of the Failure**
-
-- _Execution loss_
-- Intent is safely persisted
-
-**Recovery Action**
-
-- Re-enqueue notification immediately (respect next_retry_at semantics)
-- Preserve `attempt_count` and `next_retry_at`
-- Emit metric `reaper.reenqueue.retry_intent_missing`
-
-**Rationale**
-
-Retry intent is durable and authoritative in the DB.
-Redis is only responsible for executing intent, not storing it.
-
-<br>
-
-### Case 3: Notification Created but Never Queued
-
-**Condition**
-
-- state = created
-- `queued_at` IS NULL
-- `created_at` < now() - QUEUE_GRACE_PERIOD
-
-**Cause**
-
-- API crashed after DB persistence
-- Enqueue step never completed
-
-**Nature of the Failure**
-
-- Partial write failure
-- No delivery attempt occurred
-
-**Recovery Action**
-
-- Enqueue notification for first execution (idempotent by notification id)
-- Emit metric `reaper.reenqueue.never_queued`
-
-**Rationale**
-
-The notification intent is valid and durable.
-API likely crashed after persistence; recovery completes enqueueing.
-
-<br>
-
-### Case 4: Redis Data Loss
-
-**Condition**
-
-- Partial/total Redis wipe detected externally OR large queue-size discrepancy observed
-
-**Nature of the Failure**
-
-- Queue execution lost
-- No authoritative data loss
-
-**Recovery Action**
-
-- No special-case handling; covered by scanning DB for the cases above
-- Covered implicitly by Full Reconciiation DB-driven recovery scans
-
-**Rationale**
-
-Redis is disposable by design.
-Recovery always derives execution from DB state.
+This is part of the normal notification lifecycle.
 
 ---
 
-## Configurable Controls (Default Values)
+## Recovery
 
-These Environment-Configurable values are the defaults for first deploy. Should be adjusted after observing behaviour
+Recovery handles failures where the worker never finishes its execution.
 
-- `PROCESSING_TIMEOUT` = 15m — duration after which processing is considered stuck.
-- `QUEUE_GRACE_PERIOD` = 1m — grace before enqueuing created notifications.
-- `RECOVERY_INTERVAL` = 5m — how often the reaper runs a pass.
-- `REAPER_BATCH_SIZE` = 1000 — number of notifications scanned/enqueued per pass per predicate.
-- `MAX_REENQUEUE_PER_RUN` = 10000 — safety cap to avoid floods.
-- `REENQUEUE_DELAY_ON_DUPLICATE` = 30s — backoff if re-enqueueing finds Redis already holds jobs (prevent thundering herd).
-- `ADVISORY_LOCK_KEY` = 12345 — used to ensure a single active reaper (Postgres advisory lock recommended).
-- `STUCK_ALERT_THRESHOLD` = 0.5% — proportion of stuck notifications that triggers alerting (example threshold).
+Examples include:
 
----
+- Worker crashes while processing a notification.
+- Process is terminated during delivery.
+- Host machine loses power.
+- Container is killed unexpectedly.
 
-## Recovery Execution Model
+In these situations no delivery outcome may have been persisted.
 
-**Who Runs Recovery ?**
-
-- A dedicated reaper process (long-running) OR a scheduled job (cron/scheduler).
-- Use a single active reaper pattern (Postgres advisory lock) to avoid concurrent conflicting runs.
-
-**_Characteristics_**:
-
-- Runs independently of workers
-- Performs no delivery
-- Performs no state transitions to terminal states
-
-### Execution Frequency
-
-- Default: every `RECOVERY_INTERVAL` (5 minutes).
-- Use jitter to avoid coincidence with other periodic jobs.
-
-Rationale:
-
-- Recovery prioritizes safety over speed
-- Aggressive recovery increases duplicate execution risk
-
-### Candidate Selection Strategy
-
-Recovery selects candidates using explicit DB predicates, never Redis state.
-
-Selection is `index-backed` and scoped to non-terminal notifications only.
-
-Index-backed selection ensures recovery scans only relevant subsets of notifications and never performs full table scans.
-
-Examples:
-
-- Stuck processing older than timeout
-- Retry-eligible notifications without execution
-- Created notifications never queued
-
-**_This reinforces the DB as the single source of truth._**
-
-### Allowed Recovery Actions
-
-For all recovery cases:
-
-- Enqueue notification ID into Redis
-- Do not modify lifecycle state directly
-- Do not record delivery attempts
-
-Workers remain responsible for:
-
-- Guard rail validation
-- State transitions
-- Delivery execution
-- Retry decisions
+Recovery exists to identify these interrupted notifications and determine whether execution should continue.
 
 ---
 
-## Safety Mechanisms
+# Design Principles
 
-### Worker re-validation
-
-- Every worker must fetch the notification from DB and run guard rails before acting. Reaper relies on that invariant.
-
-### Idempotency
-
-- Jobs are idempotent by notification id. Workers must be safe to attempt a notification multiple times.
-
-### Throttling and rate-limits
-
-- Reaper must respect MAX_REENQUEUE_PER_RUN and per-notification re-enqueue caps (e.g., do not re-enqueue a single notification more than once per PROCESSING_TIMEOUT window).
-
-### Avoiding thundering herd
-
-- If re-enqueueing many notifications at once, add small randomized delays per job or chunk re-enqueues across the run.
-
-### Metric & alerting
-
-Emit metrics for:
-
-- `reaper.scans.count`
-- `reaper.reenqueue.count` (by reason)
-- `reaper.lock_acquired` / `reaper.lock_failed`
-- `notifications.stuck.count` (gauge)
-- `notifications.pending_retry.count` (gauge)
-
-Alerting examples:
-
-- High rate of stuck notifications (e.g., > `STUCK_ALERT_THRESHOLD` of recent creations)
-- Reaper failing to acquire lock repeatedly
-- Reaper crash rate > X/day
+The Recovery subsystem will follow the same architectural principles as the rest of Relays.
 
 ---
 
-## Safety Guarantees & Trade-Offs
+## PostgreSQL Remains the Source of Truth
 
-<br>
+Recovery will never rely on Redis.
 
-### Duplicate Execution Is Acceptable
+Recovery decisions will always be based on persisted notification state stored in PostgreSQL.
 
-Recovery may re-enqueue notifications that are already in-flight.
-
-This is acceptable because:
-
-- The system explicitly uses **at-least-once delivery semantics.**
-- Workers enforce guard rails
-- All attempts are recorded durably
-
-<br>
-
-### Why Recovery Does Not Corrupt State
-
-- Recovery does not bypass worker validation
-- Recovery does not write terminal states
-- Recovery does not rewrite history
-- Workers re-check eligibility on every execution
-
-**_This Way Correctness is preserved even under duplicate scheduling._**
-
-<br>
-
-### Correctness vs Liveness Trade-Off
-
-Relays intentionally prioritizes:
-
-- **Correctness over liveness in real time**
-- **Liveness over perfection eventually**
-
-\*\*_This Way A notification may be delayed, but it will not be silently lost or incorrectly marked._
+Redis is treated purely as an execution transport.
 
 ---
 
-## Failure Scenarios
+## Recovery Must Be Safe
 
-### Scenario 1: Recovery Runs While a Worker Is Processing
+Recovery must never increase the risk of duplicate notification delivery.
 
-- Recovery may enqueue a duplicate job
-- Worker guard rails prevent invalid state transitions
-- Duplicates are visible in `delivery_attempts`; acceptable under at-least-once semantics.
+Whenever uncertainty exists, Recovery should prefer preserving correctness over maximizing throughput.
 
-**Result:** Safe under at-least-once semantics
+---
 
-<br>
+## Recovery Must Be Idempotent
 
-### Scenario 2: Recovery Re-Enqueues an Already Queued Notification
+Running Recovery multiple times should never corrupt notification state.
 
-- Redis may contain duplicate jobs
-- Workers fetch DB state before acting
-- Invalid executions are refused
+Repeated recovery executions should produce the same final result.
 
-**Result:** No state corruption
+---
 
-### Scenario 3: Recovery Process Crashes Mid-Scan
+## Recovery Must Be Autonomous
 
-- No DB mutation was performed and No state changes have occurred
-- The run is idempotent and next scheduled run resumes.
+Recovery should operate independently of API requests.
 
-**Result:** No permanent impact
+Recovery is a background operational subsystem responsible for maintaining system health.
+
+---
+
+# Failure Classes
+
+The Recovery subsystem is intended to address failures that occur outside the normal notification lifecycle.
+
+Potential failure classes include:
+
+- Abandoned notifications stuck in `processing`.
+- Notifications stranded because of unexpected worker termination.
+- Notifications interrupted during infrastructure failures.
+- Notifications requiring reconciliation after Redis failures.
+- Notifications affected by unexpected deployment interruptions.
+
+The exact handling strategy for each failure class will be defined during implementation.
+
+---
+
+# Recovery Responsibilities
+
+When implemented, Recovery will be responsible for:
+
+- Detecting notifications that require reconciliation.
+- Determining whether interrupted work should continue.
+- Restoring notifications to an executable state when safe.
+- Maintaining notification lifecycle consistency.
+- Preserving delivery correctness.
+
+Recovery is an operational subsystem.
+
+It is not responsible for normal notification delivery.
+
+---
+
+# Recovery Non-Responsibilities
+
+Recovery will not:
+
+- Send notifications directly.
+- Communicate with external providers.
+- Execute retry policy.
+- Perform request validation.
+- Modify delivery attempt history.
+- Replace the Retry Engine.
+
+Notification delivery will remain the responsibility of workers.
+
+---
+
+# Relationship with Workers
+
+Workers execute notifications.
+
+Recovery restores execution when workers cannot complete it.
+
+This separation keeps worker logic focused exclusively on delivery while allowing Recovery to concentrate on infrastructure resilience.
+
+---
+
+# Relationship with the Retry Engine
+
+The Retry Engine is responsible for expected delivery failures.
+
+Recovery is responsible for unexpected infrastructure failures.
+
+The two subsystems complement one another but solve different problems.
+
+A temporary provider failure should never invoke Recovery.
+
+Likewise, a worker crash should never be handled by the Retry Engine.
+
+---
+
+# Correctness Goals
+
+When implemented, the Recovery subsystem should preserve the following system guarantees.
+
+## Notification Integrity
+
+Notifications should never become permanently stranded because of infrastructure failures.
+
+---
+
+## Delivery Correctness
+
+Recovery should never knowingly introduce duplicate deliveries.
+
+---
+
+## Durable State
+
+Recovery decisions should always be derived from durable state stored in PostgreSQL.
+
+---
+
+## Operational Visibility
+
+Recovery actions should be observable through structured logging and operational metrics.
+
+---
+
+# Future Implementation
+
+The Recovery subsystem has intentionally been deferred until after completion of the Notification Engine.
+
+Future implementation work is expected to include:
+
+- Recovery workflow implementation.
+- Reconciliation algorithms.
+- Failure detection policies.
+- Operational metrics.
+- Recovery scheduling.
+- Administrative tooling.
+- Comprehensive recovery testing.
+
+These implementation details will be documented once development begins.
+
+---
+
+# Summary
+
+Recovery is a planned operational subsystem responsible for restoring notification processing after unexpected infrastructure failures.
+
+Unlike the Retry Engine, which handles expected provider failures as part of the normal notification lifecycle, Recovery is intended to reconcile interrupted execution caused by worker crashes, infrastructure outages, or other operational failures.
+
+At the time of writing, Recovery has not yet been implemented. This document records the intended design goals and architectural boundaries for future development while clearly distinguishing them from the currently implemented Notification Engine.

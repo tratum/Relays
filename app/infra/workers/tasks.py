@@ -1,3 +1,4 @@
+from app.core.constants import NotificationChannel
 from app.infra.queues.notification_queue import NotificationQueue
 from app.infra.workers.celery import celery_conn
 from app.infra.workers.runtime import async_to_sync
@@ -21,7 +22,7 @@ def retry_scheduler_task():
     for notification in notifications:
         NotificationQueue.enqueue(
             notification_id=str(notification["id"]),
-            channel=notification["channel"],
+            channel=NotificationChannel(notification["channel"]),
         )
 
     return len(notifications)

@@ -30,10 +30,7 @@ async def create_notification(
         $6::jsonb,
         $7::jsonb
     )
-    RETURNING
-        id,
-        state,
-        created_at;
+    RETURNING *;
     """
 
     row = await conn.fetchrow(
@@ -183,7 +180,7 @@ async def schedule_retry(
     """
 
     row = await conn.fetchrow(query, notification_id, next_retry_at)
-
+    print("schedule_retry returned:", row)
     return dict(row) if row else None
 
 
@@ -212,6 +209,6 @@ async def claim_retryable_notifications(conn, limit: int = 100):
     RETURNING n.*;
     """
 
-    rows = await conn.fetchrow(query, limit)
+    rows = await conn.fetch(query, limit)
 
     return [dict(row) for row in rows]

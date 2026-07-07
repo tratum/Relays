@@ -59,7 +59,7 @@ Keeping endpoint documentation generated from the application ensures it always 
 The Relays API follows several core design principles.
 
 - **API-first** – Every platform capability is exposed through stable HTTP APIs.
-- **Asynchronous by default** – Requests represent delivery intent rather than immediate delivery.
+- **Asynchronous by default** – Requests persist delivery intent and return immediately after successful acceptance. Notification delivery occurs asynchronously in the background.
 - **Channel agnostic** – Clients interact with a unified notification model regardless of the underlying provider.
 - **Explicit contracts** – Every request and response follows well-defined schemas.
 - **Backward compatibility** – Breaking changes are introduced only through new API versions.
@@ -119,15 +119,20 @@ The Relays API revolves around several core concepts.
 
 ## Notification
 
-A notification represents an intent to deliver a message.
+A notification represents a durable request to deliver a message.
 
 A notification:
 
 - targets a single recipient
 - uses a single delivery channel
 - progresses asynchronously through its lifecycle
+- records the current delivery state
 
-Submitting a notification does not guarantee successful delivery. It guarantees that Relays has accepted responsibility for processing the request.
+Submitting a notification does not guarantee successful delivery.
+
+Instead, it guarantees that Relays has successfully accepted, persisted, and queued the notification for asynchronous processing.
+
+Clients can observe delivery progress through the Notification resource.
 
 ---
 
@@ -261,13 +266,14 @@ Relays supports idempotent execution for operations that create resources.
 
 Clients provide an `Idempotency-Key` header when retrying requests that may be affected by network failures or uncertain outcomes.
 
-For the same authenticated client, request method, endpoint, and idempotency key:
+For the same authenticated client, HTTP method, endpoint, and Idempotency-Key:
 
-- Identical requests return the original result.
-- Requests with a different payload are rejected.
+- The first request creates a new resource and returns `201 Created`.
+- An identical request returns the previously created resource with `200 OK`.
+- A request using the same Idempotency-Key but a different payload is rejected with `409 Conflict`.
 - Duplicate resource creation is prevented.
 
-Idempotency improves reliability by allowing clients to safely retry requests without introducing unintended side effects.
+Idempotency allows clients to safely retry notification submission without introducing duplicate notifications.
 
 ---
 
@@ -296,22 +302,41 @@ Clients should respect the retry interval before issuing additional requests.
 
 Relays follows conventional HTTP semantics.
 
-| Status Code                 | Meaning                                                   |
-| --------------------------- | --------------------------------------------------------- |
-| `200 OK`                    | Request completed successfully.                           |
-| `201 Created`               | A new resource was created.                               |
-| `202 Accepted`              | Request accepted for asynchronous processing.             |
-| `204 No Content`            | Request completed successfully without a response body.   |
-| `400 Bad Request`           | Invalid request payload or parameters.                    |
-| `401 Unauthorized`          | Authentication failed or credentials are missing.         |
-| `403 Forbidden`             | Authenticated but not permitted to perform the operation. |
-| `404 Not Found`             | Requested resource does not exist.                        |
-| `409 Conflict`              | Request conflicts with the current resource state.        |
-| `422 Unprocessable Entity`  | Request validation failed.                                |
-| `429 Too Many Requests`     | Rate limit exceeded.                                      |
-| `500 Internal Server Error` | Unexpected server error.                                  |
+| Status Code                 | Meaning                                                              |
+| --------------------------- | -------------------------------------------------------------------- |
+| `200 OK`                    | Request completed successfully or an existing resource was returned. |
+| `201 Created`               | A new resource was created.                                          |
+| `202 Accepted`              | Reserved for future asynchronous operations.                         |
+| `204 No Content`            | Request completed successfully without a response body.              |
+| `400 Bad Request`           | Invalid request payload or parameters.                               |
+| `401 Unauthorized`          | Authentication failed or credentials are missing.                    |
+| `403 Forbidden`             | Authenticated but not permitted to perform the operation.            |
+| `404 Not Found`             | Requested resource does not exist.                                   |
+| `409 Conflict`              | Request conflicts with the current resource state.                   |
+| `422 Unprocessable Entity`  | Request validation failed.                                           |
+| `429 Too Many Requests`     | Rate limit exceeded.                                                 |
+| `500 Internal Server Error` | Unexpected server error.                                             |
 
 Not every endpoint returns every status code. Endpoint-specific responses are documented in the generated OpenAPI documentation.
+
+---
+
+# Notification Delivery Semantics
+
+Notification creation is asynchronous.
+
+A successful notification submission indicates only that Relays has accepted and persisted the notification.
+
+Actual delivery occurs independently through background processing.
+
+Consequently:
+
+- A successful POST request does not imply successful delivery.
+- Temporary provider failures are handled automatically.
+- Delivery progress should be observed by retrieving the Notification resource.
+- Provider-specific failures are reflected in notification state rather than the original POST response.
+
+Clients should treat notification creation and notification delivery as separate operations.
 
 ---
 
@@ -364,6 +389,7 @@ The Relays API follows semantic versioning and strives to maintain backward comp
 Clients may safely rely on:
 
 - Public API endpoints documented through OpenAPI.
+- Idempotent notification submission semantics.
 - Request and response schemas.
 - Authentication mechanisms.
 - HTTP status codes.
@@ -395,7 +421,7 @@ Additional aspects of the platform are documented separately.
 | `ARCHITECTURE.md` | Overall system architecture and component interactions.             |
 | `AUTH.md`         | Authentication, sessions, JWTs, refresh tokens, and security flows. |
 | `DATA_MODEL.md`   | Database schema, relationships, and ownership.                      |
-| `WORKERS.md`      | Background processing and notification delivery.                    |
+| `WORKERS.md`      | Worker execution model and notification delivery lifecycle.         |
 | `RECOVERY.md`     | Failure handling and recovery mechanisms.                           |
 | `BILLING.md`      | Billing model, plans, and usage metering (future).                  |
 

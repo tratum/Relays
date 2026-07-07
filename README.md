@@ -6,9 +6,44 @@
 
 Relays is an **API-first Notification Delivery Service** built for backend systems that require reliable, asynchronous communication.
 
-It provides a unified API to submit notifications and handles delivery through a durable, observable, and retry-aware pipeline. The system is designed to prioritize **correctness, failure handling, and explicit state management** over convenience abstractions.
+It provides a unified API for submitting notifications while managing asynchronous delivery through durable background workers.
+
+Relays treats notification delivery as a stateful workflow rather than a single network request. Every notification progresses through an explicit lifecycle, every delivery attempt is recorded, and temporary failures are retried automatically using a durable retry engine.
+
+The platform is designed around correctness, observability, fault tolerance, and provider independence.
 
 > **Current Scope:** Email delivery (first implemented channel)
+
+---
+
+## Project Status
+
+### Implemented
+
+- Email Notifications
+- Notification Engine
+- Retry Engine
+- Worker Architecture
+- API Key Authentication
+- JWT Authentication
+- Workspace Management
+- Idempotency
+- OTP Authentication
+- Sliding-window Rate Limiting
+
+### In Progress
+
+- Billing & Subscriptions
+
+### Planned
+
+- Integrating Email Sending for Email OTP
+- Notification Rate Limiting
+- Billing & Subscriptions
+- Usage Tracking
+- SMS
+- Webhooks
+- Dashboard
 
 ---
 
@@ -23,7 +58,22 @@ Most applications need to send notifications, but:
 Relays addresses these problems by acting as a **dedicated notification backend**:
 
 ```
-Application → Relays API → Queue → Worker → Provider
+Application
+      │
+      ▼
+ Relays API
+      │
+      ▼
+ PostgreSQL
+      │
+      ▼
+ Notification Queue
+      │
+      ▼
+ Background Worker
+      │
+      ▼
+ Provider
 ```
 
 ---
@@ -51,7 +101,20 @@ All functionality is exposed through well-defined HTTP APIs.
 Every notification progresses through a clear lifecycle:
 
 ```
-created → queued → processing → sent / failed
+created
+   ↓
+queued
+   ↓
+processing
+   ├──────────────► sent
+   │
+   ├──────────────► failed
+   │
+   ▼
+temporary failure
+   │
+   ▼
+queued
 ```
 
 ### Durability before execution
@@ -75,7 +138,9 @@ Relays is designed to support multiple delivery channels, even though only **ema
 Each notification is modeled as:
 
 ```
+
 channel + payload + metadata
+
 ```
 
 This allows:
@@ -88,12 +153,15 @@ This allows:
 
 ## Key Capabilities
 
-- Asynchronous notification processing
-- Durable persistence using PostgreSQL
-- Retry handling with exponential backoff (Celery-managed)
-- Delivery attempt tracking
-- Explicit lifecycle state management
-  At-least-once delivery guarantees
+- Unified API for asynchronous notifications
+- Durable notification persistence
+- Background worker execution
+- Automatic retry scheduling
+- Immutable delivery attempt history
+- Explicit notification lifecycle
+- Provider-independent delivery architecture
+- API key authentication
+- At-least-once delivery guarantees
 
 ---
 
@@ -107,17 +175,33 @@ This allows:
 6. Notification transitions to `sent` or `failed`
 
 ```
+
 Client
-  ↓
-FastAPI (API Layer)
-  ↓
-PostgreSQL (Source of Truth)
-  ↓
-Redis (Queue)
-  ↓
-Celery Workers
-  ↓
-Provider (Email)
+   │
+   ▼
+FastAPI
+   │
+   ▼
+Notification Submission
+   │
+   ▼
+PostgreSQL
+   │
+   ▼
+Notification Queue
+   │
+   ▼
+Redis
+   │
+   ▼
+Channel Worker
+   │
+   ▼
+Provider Registry
+   │
+   ▼
+Email Provider
+
 ```
 
 ---
@@ -125,12 +209,24 @@ Provider (Email)
 ## Notification Lifecycle
 
 ```
+
 created
-  → queued
-  → processing
-  → sent
-       OR
-  → failed
+   │
+   ▼
+queued
+   │
+   ▼
+processing
+   ├──────────────► sent
+   │
+   ├──────────────► failed
+   │
+   ▼
+temporary failure
+   │
+   ▼
+queued
+
 ```
 
 Each transition is persisted and queryable.
@@ -142,7 +238,7 @@ Each transition is persisted and queryable.
 - **Backend:** FastAPI
 - **Database:** PostgreSQL (asyncpg)
 - **Queue & Cache:** Redis
-- **Workers:** Celery
+- **Workers:** Celery + Celery Beat
 - **Containerization:** Podman
 - **Package Management:** uv
 
@@ -156,6 +252,8 @@ Each transition is persisted and queryable.
 - [Worker Model](docs/WORKERS.md)
 - [Recovery Model](docs/RECOVERY.md)
 - [Product Requirements](docs/PRD.md)
+- [Retry Engine] (docs/RETRY_ENGINE.md)
+- [Providers] (docs/PROVIDERS.md)
 
 ---
 
@@ -292,10 +390,8 @@ Content-Type: application/json
   "channel": "email",
   "payload": {
     "to": "user@example.com",
-    "cc": [],
-    "bcc": [],
     "subject": "Hello",
-    "body": "Test message"
+    "html_body": "<h1>Hello</h1>"
   },
   "metadata": {}
 }
@@ -313,31 +409,37 @@ GET /v1/notifications/{notification_id}
 
 ## Current Limitations (MVP Scope)
 
-- No authentication (API keys planned)
-- Single-region deployment
-- No rate limiting yet
-- No billing/usage tracking
-- No webhook callbacks
+- Email is the only supported delivery channel.
+- Recovery & reconciliation subsystem not yet implemented.
+- Dead-letter queues not yet implemented.
+- Scheduled notifications not yet implemented.
 
 ---
 
 ## Roadmap
 
-- API key authentication
-- Rate limiting and abuse protection
-- Usage tracking and billing (Stripe)
-- Additional channels (SMS, webhooks)
-- Delivery status webhooks
-- Optional dashboard
+- SMS notifications
+- Webhook notifications
+- Scheduled notifications
+- Dead-letter queues
+- Recovery & reconciliation engine
+- Usage-based billing
+- Provider routing
+- Delivery webhooks
+- Dashboard
 
 ---
 
 ## Design Notes
 
-- Retry scheduling is handled by **Celery**, not the database
-- Database serves as **state and observability layer**
-- Schema is initialized automatically at startup
-- Lightweight migration system implemented (no Alembic)
+- PostgreSQL is the authoritative source of notification state.
+- Redis acts solely as an execution transport.
+- Workers remain stateless and always reload notification state before execution.
+- Retry intent is stored durably in PostgreSQL.
+- Delivery attempts are immutable and append-only.
+- Providers never modify notification state directly.
+- Schema is initialized automatically during application startup.
+- Lightweight SQL migrations are used instead of a migration framework.
 
 ---
 

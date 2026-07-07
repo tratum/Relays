@@ -93,16 +93,19 @@ Redis data should always be considered disposable.
 
 Notification delivery is inherently asynchronous.
 
-API requests should complete quickly after validation and persistence.
+API requests complete after validation, persistence, and successful enqueueing.
 
-Actual delivery is delegated to background workers.
+Actual delivery occurs independently in background workers.
 
-This provides:
+Workers communicate delivery outcomes through a provider-independent result model, while notification lifecycle state remains durably persisted in PostgreSQL.
 
-- Lower API latency
-- Better reliability
-- Automatic retries
+This architecture provides:
+
+- Low API latency
+- Durable notification state
+- Reliable retry scheduling
 - Provider isolation
+- Horizontal worker scalability
 
 ---
 
@@ -159,33 +162,42 @@ The system architecture can be represented as:
                            Clients
                               │
                               ▼
-                      HTTPS REST API
+                       HTTPS REST API
                               │
                               ▼
-                        FastAPI Server
+                         FastAPI Server
                               │
-      ┌───────────────┬───────────────┬───────────────┐
-      │               │               │               │
-      ▼               ▼               ▼               ▼
+       ┌───────────────┬───────────────┬───────────────┐
+       │               │               │               │
+       ▼               ▼               ▼               ▼
  Authentication   Notifications   API Keys    Workspaces
-      │               │               │               │
-      └───────────────┴───────┬───────┴───────────────┘
-                              ▼
-                          Workflows
-                 ┌────────────┼────────────┐
-                 ▼            ▼            ▼
-           PostgreSQL      Redis       Celery
-                 │                          │
-                 │                          ▼
-                 │                  Background Workers
-                 │                          │
-                 └──────────────────────────▼
-                     Notification Providers
+       │               │               │               │
+       └───────────────┴───────┬───────┴───────────────┘
+                               ▼
+                           Workflows
+                  ┌────────────┼────────────┐
+                  ▼            ▼            ▼
+             PostgreSQL      Redis       Celery
+                  │            │            │
+                  │            │            ▼
+                  │            │      Background Workers
+                  │            │            │
+                  │            │            ▼
+                  │            │    Provider Registry
+                  │            │            │
+                  │            │            ▼
+                  │            │      Email Providers
+                  │            │            │
+                  └────────────┴────────────▼
+                     Notification Lifecycle
+                     & Delivery Attempts
 ```
 
 Every incoming request ultimately passes through a workflow before interacting with infrastructure.
 
 Business modules never communicate directly with one another through HTTP.
+
+Background workers execute notification delivery while PostgreSQL remains the authoritative source of notification state, retry intent, and delivery history.
 
 ![Relays Architecture](docs/digrams/Architecture.png)
 
@@ -210,7 +222,7 @@ FastAPI does not implement business rules.
 
 ## PostgreSQL
 
-PostgreSQL stores all durable platform state.
+PostgreSQL stores all durable platform state and serves as the authoritative source of truth for Relays.
 
 Examples include:
 
@@ -221,7 +233,15 @@ Examples include:
 - Notifications
 - Delivery Attempts
 
-Every business operation ultimately persists data to PostgreSQL.
+For the Notification Engine, PostgreSQL additionally stores:
+
+- Notification lifecycle state
+- Retry intent (`next_retry_at`)
+- Delivery history
+- Provider selection
+- Notification payloads
+
+Workers always reload notification state from PostgreSQL before executing delivery, ensuring correctness even when queue messages are delayed or duplicated.
 
 ---
 
@@ -229,42 +249,56 @@ Every business operation ultimately persists data to PostgreSQL.
 
 Redis provides low-latency infrastructure services.
 
-Current usage:
+Current usage includes:
 
-- Celery broker
+- Celery message broker
 - Sliding-window rate limiting
 
-Redis may be safely cleared without permanent data loss.
+Redis is intentionally treated as an execution transport rather than persistent storage.
+
+Notification state, retry scheduling, delivery history, and lifecycle transitions are never stored exclusively in Redis.
+
+Redis may therefore be safely cleared without permanent data loss.
 
 ---
 
 ## Celery
 
-Celery executes asynchronous jobs.
+Celery executes asynchronous background work.
 
-Current responsibilities:
+Current responsibilities include:
 
-- Email delivery
+- Notification delivery workers
+- Retry scheduler execution through Celery Beat
+
+Notification workers remain stateless.
+
+Workers execute notification delivery, while retry scheduling is driven by persisted retry intent stored in PostgreSQL.
 
 Future responsibilities may include:
 
 - SMS delivery
 - Webhook delivery
-- Scheduled tasks
 - Usage aggregation
 
 ---
 
 ## Notification Providers
 
-Providers integrate with external delivery services.
+Providers integrate Relays with external delivery services.
 
 Current provider implementations include:
 
-- Deterministic fake provider
-- Mailrelay
+- Deterministic Fake Provider
+- MailRelay
 
-Additional providers can be introduced without modifying higher-level workflows.
+Providers never modify notification state directly.
+
+Instead, every provider returns a standardized `ProviderResult` describing the outcome of a delivery attempt.
+
+Workers interpret this result and perform the appropriate notification lifecycle transition.
+
+Additional providers can be introduced without modifying worker execution logic.
 
 ---
 
@@ -300,25 +334,42 @@ HTTP Request
 FastAPI Route
       │
       ▼
-Workflow
+Notification Submission Workflow
       │
       ▼
 Persist Notification
       │
       ▼
-Publish Celery Task
+Enqueue Notification
       │
       ▼
 Return 201 Created
                      │
                      ▼
-             Background Worker
+              Background Worker
                      │
                      ▼
-          External Notification Provider
+             Notification Delivery
+                     │
+                     ▼
+                Provider Registry
+                     │
+                     ▼
+                  Provider
+                     │
+                     ▼
+               ProviderResult
+                     │
+                     ▼
+       Persist Delivery Attempt
+                     │
+                     ▼
+      Notification State Transition
 ```
 
-This separation ensures API responsiveness regardless of provider latency.
+The API returns immediately after the notification has been durably persisted and successfully queued.
+
+Notification delivery and lifecycle management continue asynchronously in background workers.
 
 ---
 
@@ -394,16 +445,20 @@ Ownership defines which module is responsible for creating, updating, and valida
 
 Notification delivery is intentionally decoupled from request processing.
 
-The API accepts a notification request by:
+The Notification Submission workflow:
 
-1. Validating the payload.
-2. Persisting the notification.
-3. Publishing a worker task.
-4. Returning immediately.
+1. Validates the request.
+2. Persists the notification.
+3. Enqueues the notification for background execution.
+4. Returns immediately to the client.
 
-Delivery occurs independently in the background.
+Workers later execute notification delivery independently.
 
-This architecture enables retries, provider failover, and resilience without impacting client latency.
+Temporary delivery failures persist retry intent inside PostgreSQL.
+
+A separate Retry Engine periodically discovers retryable notifications and re-enqueues them for execution.
+
+This architecture ensures that API responsiveness remains independent of provider latency while providing durable, fault-tolerant retry behaviour.
 
 ---
 
@@ -437,8 +492,9 @@ Examples include:
 - Worker failures do not terminate API requests.
 - Redis failures do not corrupt PostgreSQL state.
 - Individual notification failures do not affect unrelated notifications.
+- Temporary provider failures are isolated through durable retry scheduling.
 
-This isolation improves reliability and simplifies recovery.
+This isolation improves reliability, simplifies recovery, and allows background processing components to evolve independently of the API layer.
 
 ---
 
@@ -489,5 +545,6 @@ This document intentionally does not describe:
 - Authentication implementation details
 - Provider-specific integrations
 - Billing logic
+- Retry engine implementation details
 
 These concerns are documented separately in their respective design documents.

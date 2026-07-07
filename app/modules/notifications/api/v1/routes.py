@@ -11,6 +11,7 @@ from fastapi import (
 )
 from pydantic import UUID4
 
+from app.core.constants import NotificationChannel
 from app.core.error_codes import ErrorCode
 from app.core.errors import APIException, ErrorResponse
 from app.infra.db.session import get_pool
@@ -100,7 +101,7 @@ async def create_notify(
         try:
             NotificationQueue.enqueue(
                 str(notification_record["id"]),
-                notification_record["channel"],
+                NotificationChannel(notification_record["channel"]),
             )
 
             async with pool.acquire() as conn:
