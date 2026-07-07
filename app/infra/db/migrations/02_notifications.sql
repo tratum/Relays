@@ -6,8 +6,8 @@ BEGIN;
 
 ALTER TABLE notifications
 ADD COLUMN workspace_id UUID NOT NULL,
-ADD COLUMN api_key_id UUID,
-ADD COLUMN provider TEXT;
+ADD COLUMN api_key_id UUID NOT NULL,
+ADD COLUMN provider TEXT NOT NULL;
 
 -- -------------------
 -- Delete Constraints

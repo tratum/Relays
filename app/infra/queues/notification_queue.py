@@ -1,5 +1,4 @@
 from app.core.constants import NotificationChannel
-from app.infra.workers.tasks import deliver_notification_task
 
 
 class NotificationQueue:
@@ -12,6 +11,8 @@ class NotificationQueue:
         notification_id: str,
         channel: NotificationChannel,
     ) -> None:
+        from app.infra.workers.tasks import deliver_notification_task
+
         deliver_notification_task.apply_async(  # pyright: ignore[reportFunctionMemberAccess]
             args=(notification_id,),
             queue=channel.value,

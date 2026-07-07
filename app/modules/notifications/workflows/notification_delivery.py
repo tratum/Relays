@@ -15,15 +15,10 @@ from ..db.notification_queries import (
     mark_sent,
     schedule_retry,
 )
-from ..providers.email.registry import (
-    email_provider_registry,
-)
-from ..providers.email.result import (
-    ProviderResult,
-)
-from ..retry.policy import (
-    calculate_next_retry_time,
-)
+from ..providers.email.fake.provider import FakeProvider
+from ..providers.email.registry import email_provider_registry
+from ..providers.email.result import ProviderResult
+from ..retry.policy import calculate_next_retry_time
 
 
 class PermanentFailureException(Exception):
@@ -85,6 +80,7 @@ async def persist_delivery_result(
                     )
 
                 case DeliveryStatus.TEMPORARY_FAILURE:
+                    print("------------------------------ENTERED TEMP FAILURE")
                     if attempt_number >= notification["max_attempts"]:
                         await mark_failed(
                             conn,
@@ -97,12 +93,15 @@ async def persist_delivery_result(
                     next_retry_at = calculate_next_retry_time(
                         attempt_number=attempt_number,
                     )
+                    print("------------------------------Scheduling retry:", next_retry_at)
 
                     await schedule_retry(
                         conn,
                         notification["id"],
                         next_retry_at,
                     )
+
+                    print("--------------------------------Retry scheduled")
 
                 case _:
                     raise RuntimeError(
@@ -124,21 +123,16 @@ async def deliver_notification(
     if notification is None:
         return
 
-    validate_delivery_eligibility(
-        notification,
-    )
+    validate_delivery_eligibility(notification)
 
-    payload = EmailPayload.model_validate(
-        notification["payload"],
-    )
+    payload = EmailPayload.model_validate(notification["payload"])
 
-    provider = email_provider_registry.get(
-        notification["provider"],
-    )
+    provider = email_provider_registry.get(notification["provider"])
 
-    result = await provider.send(
-        payload,
-    )
+    if isinstance(provider, FakeProvider):
+        provider.configure(notification)
+
+    result = await provider.send(payload)
 
     await persist_delivery_result(
         notification,

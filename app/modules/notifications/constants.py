@@ -11,6 +11,7 @@ class NotificationState(str, Enum):
 
 class EmailNotificationProviders(str, Enum):
     MAILRELAY = "mailrelay"
+    FAKE = "fake"
 
 
 class DeliveryStatus(str, Enum):

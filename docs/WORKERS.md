@@ -2,343 +2,828 @@
 
 ---
 
-Side Note:
+# Purpose
 
-1. What is a Worker in Relays ?
+This document defines the execution model, responsibilities, guarantees, and failure semantics of background workers in Relays.
 
-   A worker is a background process that reads notification state from the DB and is responsible for attempting delivery, recording outcomes, and moving notifications through their lifecycle.
+Workers are responsible for executing notification delivery after a notification has been accepted by the API.
 
-   A worker is the only component in the system allowed to perform Notification Delivery and transitions notification into their final states
+A worker is the only component in the system permitted to perform irreversible delivery side effects (sending notifications through external providers) and is therefore the sole owner of notification lifecycle transitions after submission.
 
-2. What does a Worker recieve and why ?
+This document intentionally focuses only on worker execution.
 
-   A worker recieves minimal job payload i.e. notification id because Redis Jobs are unreliable hints not trusted data. The worker must always fetch the full notifications from the DB which is the Source of Truth, to guard against stale, duplicated or replayed jobs.
+Retry scheduling is documented separately in **RETRY_ENGINE.md**.
 
-3. What is the very first database interaction the worker must perform, and why must it happen before any side effects ?
-
-   The First interaction a worker must perform is a read of the notification record from PostgresSQL to determine the current authoritative state before performing any state transition or side effects.
-
-4. At what exact moment does the worker “claim” a notification, and how is that claim made durable ?
-   A worker claims a notification by transitioning it's state from a non-terminal state to `processing` in the DB, making the claim durable and observable.
-
-5. What is the irreversible side effect/action in the worker flow, and what conditions must be true before it's allowed to happen ?
-
-   The irreversible side-effect is the external delivery attempt (sending notification via External Providers). Before permforming this action, the worker must have authoritatively claimed the notification by transitioning it to `processing` in the DB and verified that the notification is eligible for delivery
-
-6. Why must every delivery attempt be recorded durably, even when the system intends to retry or ultimately fail the notification ?
-
-   Every Delivery attempt must be recorded as an immutable event because attempts represent historical facts about what actually happened in the system and correctness, debugging and recovery depends on a complete and durable attempt history.
-
-<br>
+Crash recovery and reconciliation are documented separately in **RECOVERY.md**.
 
 ---
 
-## Purpose
+# Core Design Principles
 
-This document defines the **execution model**, **responsibilites** and **failure behaviour** of background workers in Relays.
+The worker architecture follows a small number of non-negotiable design principles.
 
-Workers are responsible for fetching jobs, performing delivery, handling retries and updating notification lifecycle state
-
-<br>
+These principles are more important than any individual implementation detail because they determine the correctness of the entire notification engine.
 
 ---
 
-## Worker Responsibilites
+## 1. PostgreSQL is the Source of Truth
 
-Workers are the Authoritative executors of irreversible delivery side effects and the sole owners of notification lifecycle transitions, including all terminal states, with PostgresSQL as the source of truth
+Workers never trust Redis.
+
+Redis exists only to transport execution requests.
+
+Every authoritative decision is derived from PostgreSQL.
+
+This includes:
+
+- Notification state
+- Retry intent
+- Delivery history
+- Attempt counts
+- Provider selection
+- Notification payload
+
+Even if Redis delivers duplicate jobs or loses queued jobs, PostgreSQL remains the authoritative representation of the notification lifecycle.
+
+---
+
+## 2. Workers Execute Intent
+
+Workers never create notification intent.
+
+That responsibility belongs to the Notification Submission workflow.
+
+Workers execute notification intent that already exists.
+
+The lifecycle therefore becomes:
+
+```
+Client
+
+↓
+
+Notification Submission
+
+↓
+
+Persist Notification
+
+↓
+
+Queue Notification
+
+↓
+
+Worker Execution
+```
+
+---
+
+## 3. Workers Own Irreversible Side Effects
+
+Sending a notification is an irreversible operation.
+
+Once an external provider accepts delivery, the system can never "unsend" the notification.
+
+Because of this, workers are the only component allowed to communicate with external providers.
+
+No API endpoint, scheduler or recovery process is permitted to perform delivery.
+
+---
+
+## 4. Workers Own Lifecycle Transitions
+
+Once a notification has been persisted, only workers are allowed to transition notification state.
+
+Workers are responsible for moving notifications through their lifecycle.
+
+```
+created
+
+↓
+
+queued
+
+↓
+
+processing
+
+↓
+
+sent
+```
+
+OR
+
+```
+processing
+
+↓
+
+queued (retry)
+
+↓
+
+processing
+
+↓
+
+failed
+```
+
+No other subsystem may directly transition a notification into a terminal state.
+
+---
+
+## 5. Every Delivery Attempt is Immutable
+
+Every attempt represents a historical fact.
+
+Historical facts must never be rewritten.
+
+Whether an attempt succeeds, fails permanently, or fails temporarily, a corresponding row is written to the `delivery_attempts` table.
+
+This guarantees:
+
+- Complete audit history
+- Accurate debugging
+- Operational visibility
+- Reliable retry accounting
+
+Workers append history.
+
+They never rewrite history.
+
+---
+
+## 6. Providers Return Outcomes
+
+Providers never modify notification state.
+
+Providers communicate only one thing:
+
+> The outcome of a delivery attempt.
+
+Every provider returns a `ProviderResult`.
+
+Workers interpret that result and decide what state transition should occur.
+
+This separation ensures:
+
+- Providers remain stateless.
+- Retry policy remains provider-independent.
+- Notification lifecycle remains centralized.
+
+---
+
+# Worker Responsibilities
 
 Workers are responsible for:
 
-- Receive job reference (notification id) from the redis queue
-- Load notification from db
-- Validate eligibility (Must Pass the Guard Rails)
-- Transition State to `processing`
-- Attempting notification delivery
-- Recording a row in delivery_attempts table in DB
-- On Success: mark notification state as `sent` and write the `sent_at` value
-- On Failure: incremet `attempt_count`, compute next_retry_at and either requeue or mark `failed` if exhausted
-- Emit Metrics and structured logs
+- Receiving notification execution requests.
+- Loading notification state from PostgreSQL.
+- Validating delivery eligibility.
+- Executing notification delivery.
+- Recording immutable delivery attempts.
+- Transitioning notification lifecycle state.
+- Scheduling future retries when appropriate.
+- Persisting delivery metadata.
+- Emitting structured logs and operational metrics.
 
-<br>
-
----
-
-## Non-Responsibilities
-
-- Workers do not own:
-  - Validation
-  - Authentication
-  - Persistence of Initial Intent
-- Workers do not store truth outside of db
-- Workers do not decide quotas, pricing and customer-facing rules
-- Workers do not accept user requests
-
-<br>
+Workers own every state transition after notification submission.
 
 ---
 
-## Guard Rails
+# Worker Non-Responsibilities
 
-A worker must refuse to process a job if any of the following conditions are true
+Workers deliberately do **not** perform the following responsibilities.
 
-- The notification does not exist
-- The notification is already in the `processing` state
-- The notification is already in a terminal state (sent/failed)
-- The notification has exhausted it's maximum attempts
-- A retry is scheduled for the future (now < next_retry_at)
+## Authentication
 
----
+Authentication is completed before notification persistence.
 
-## Worker Flow
-
-After an attempt is made, the worker evaluates the outcome not the state. There are only **3 Meaningful Outcomes** of an Attempt:
-
-1. Success
-
-Meaning:
-
-- The external provider accepted and completed the delivery
-- No further attempts are needed or allowed
-
-Required Actions:
-
-- Transition notification state to `sent`
-- Persist sent_at
-- Do not enqueue further jobs
-
-This is a **Terminal Decision**
-
-2. Retryable Failure
-
-Meaning:
-
-- The Failure is transient
-- Another attempt might succeed later
-- Re-Enqueueing is only applicable for this outcome
-
-Required Actions:
-
-- Increment attempt_count
-- Compute next retry time (Backoff)
-- Persist retry intent (next_retry_at)
-- Re-Enqueue a Job (Delayed)
-
-This is a **Non-Terminal Decision**
-
-3. Non-Retryable Failure
-
-Meaning:
-
-- Further Attempts are pointless or dangerous
-- Retry limits are exhausted or
-- Failure is permanent by nature
-
-Examples:
-
-- invalid email address
-- authentication failure
-- policy violation
-
-Required Actions:
-
-- Transition notification state to `failed`
-- Persist Failure Reason
-- Don not enqueue further jobs
-
-This is a **Terminal Decision**
-
-<br>
+Workers never authenticate users or API keys.
 
 ---
 
-## Retry Intent vs Retry Mechanism
+## Request Validation
 
-### Why Retry Intent must be stored in the DB ?
+Workers never validate HTTP requests.
 
-The DB is :
+Notification payload validation has already been completed by the API layer.
 
-- Authoritative
-- Durable
-- Crash Resistant
-- Queryable
-
-By Storing Retry Intent in the DB
-
-- Retries survive worker crashes
-- Retries survives redis restarts
-- Retries can be inspected and audited
-- Retry limits are enforcable
-
-That's why Database stores intent and queues execute intent
-
-<br>
+Workers assume persisted notifications are structurally valid.
 
 ---
 
-## Failure Scenarios
+## Persistence of Notification Intent
 
-Below given are Failures at every critical point:
+Workers never create notifications.
 
-1. Failure before Delivery Attempt
+Workers only execute notifications that already exist.
 
-   **Where the Failure Happens ?**
-   - Job picked from redis
-   - Notifications Loaded
-   - Possibly transitioned to `processing` state
-   - No email sent yet
+---
 
-   **System State**
-   - No Delivery Attempt Recorded
-   - Notification is Non-Terminal
+## Business Rules
 
-   **Why this is Safe ?**
-   - No irreversible action occured
-   - Workers can retry safely
-   - Duplicate Jobs cause no harm
+Workers do not decide:
 
-   **Guarantees**
+- Billing
+- Quotas
+- Rate limits
+- Subscription plans
+- Customer permissions
 
-   At Least Once Excecution without duplicate side-effects
+Those concerns belong to higher application layers.
 
-<br>
+---
 
-2. Failure After Delivery Attempt, Before DB Update
+## Recovery
 
-   **Where the Failure Happens ?**
-   - Email Sent to Provider
-   - Worker crashes before recording attempt or updating state
+Workers do not recover abandoned notifications.
 
-   **System State**
-   - Email amy or may not have been delivered
-   - DB does not reflect the delivery attempt yet
+Recovery is handled by the Recovery & Reconciliation subsystem.
 
-   **Why this is Acceptable ?**
-   - Ambiguity is unavoidable in distributed systems
-   - Retries may cause duplicate delivery
-   - System explicitly allows at-least-once delivery
+Workers execute notifications.
 
-   **Guarantees**
+Recovery restores execution.
 
-   No Message Loss, but may have possible duplicates
+---
 
-3. Failure After Recording Attempt, Before Decision
+# Worker Architecture
 
-   **Where the Failure Happens ?**
-   - Delivery Attempt is recorded
-   - No State Transition Yet
+The execution pipeline is intentionally simple.
 
-   **System State**
-   - Historical Facts exists
-   - Notification remains retryable
+```
+                PostgreSQL
+                      ▲
+                      │
+                      │
+                Notification
+                 Submission
+                      │
+                      ▼
+             NotificationQueue
+                      │
+                      ▼
+                   Redis
+                      │
+                      ▼
+              Channel Queue
+                      │
+                      ▼
+              Celery Worker
+                      │
+                      ▼
+           Notification Workflow
+                      │
+                      ▼
+             Provider Registry
+                      │
+        ┌─────────────┴─────────────┐
+        │                           │
+        ▼                           ▼
+ MailRelay Provider          Fake Provider
+        │                           │
+        └─────────────┬─────────────┘
+                      ▼
+               ProviderResult
+                      │
+                      ▼
+        Persist Delivery Attempt
+                      │
+                      ▼
+          Notification State Update
+```
 
-   **Why this is Safe ?**
-   - Attempt History is Preserved
-   - Worker can re-evaluate outcome
-   - Retry Logic remains consistent
+Every component has exactly one responsibility.
 
-   **Guarantees**
+No component owns more than one concern.
 
-   No unexplained State Transitions
+---
 
-<br>
+# Worker Execution Flow
 
-4. Failure after Decision, Before Re-Enqueue
+Each worker executes the following sequence.
 
-   Here decision can be
-   - Success
-   - Retryable Failure
-   - Non-Retryable Failure
+## Step 1 — Receive Notification ID
 
-   **Where the Failure Happens ?**
-   - The Worker has recorded the delivery attempt
-   - Written the retry decision to db
-   - Before the worker could enqueue a new job in redis, it crashes
+Workers receive only a notification identifier.
 
-   **System State**
-   - Retry Intent exists in DB
-   - No Execution Scheduled Yet
+Example:
 
-   **Why this is Safe ?**
-   - Retry Intent is durable
-   - Recovery logic can enqueue missing jobs
+```
+Notification ID
 
-   **Guarantees**
+↓
 
-   Retry Intent is never lost
+550e8400-e29b-41d4-a716-446655440000
+```
 
-<br>
+The queue intentionally contains minimal information.
 
-5. Two Workers read the same notification before either writes `processing`
+Workers never trust queue payloads.
 
-   **Where the Failure Happens ?**
-   - Two Workers recieve duplicate jobs from Redis
-   - Both Workers read the notification when it is in a non-terminal, non-processing state
-   - Neither Worker has yet transitioned the state to `processing`
+---
 
-   **System State**
-   - Both Workers believe that the notification is eligible
-   - Both may attempt to transition state and attempt delivery
+## Why only the Notification ID?
 
-   **Why this is Acceptable ?**
-   - Duplicate Delivery attempts may occur
-   - At-least-once delivery semantics allow duplicate external deliveries in rare failure scenarios.
+Redis is treated as a best-effort execution mechanism.
 
-   **Guarantees**
-   - This race condition is **explicitly allowed** under at-least-once delivery semantics
-   - All Delivery Attempts are recorded durably
-   - Only valid state transitions are persisted
-   - No Notification state becomes corrupted
+Queue messages may be:
 
-   **Design Trade-Offs**
-   - This Scenario could be prevented by using database-level locking when reading notifications, ensuring that only one worker can claim a notification at a time
-   - However this approach is intentionally not used because it reduces Throughput which limits parralelism and becomes a bottleneck under load
-   - Increases Failure Coupling i.e. if a worker crashes while holding a lock, other workers are blocked thereby turning a single-worker failure into a system-wide slowdown
+- duplicated
+- delayed
+- reordered
+- replayed
+- lost
 
-<br>
+Embedding notification state inside Redis would allow stale execution.
 
-6. Redis Data Loss
+Instead, workers always reload the complete notification from PostgreSQL.
 
-   **Where the Failure Happens ?**
-   - Redis loses jobs entirely
+This guarantees every execution uses authoritative state.
 
-   **System State**
-   - Notification intent and retry intent still exists in the DB
+---
 
-   **Why this is Safe ?**
-   - Redis is Disposable
-   - Jobs can be regenerated from the DB States
+## Step 2 — Load Notification
 
-   **Guarantees**
+The worker loads the notification from PostgreSQL.
 
-   No Notification Loss
+At this point the database becomes the only source consulted during execution.
 
-<br>
+No delivery decision is made using queue contents.
 
-7. Worker Crashes and notification stays in processing forever
+---
 
-   **Where the Failure Happens ?**
-   - Worker successfully transitions notification state to processing
-   - Worker crashes before completing delivery and before transitioning to a terminal state
-   - No Further Jobs are enqueued for this Notification
+## Step 3 — Validate Delivery Eligibility
 
-   **System State**
-   - Notification stays in `processing`
-   - Delivery Attempts may or may not have been recorded (depends on crash point)
-   - No worker will pick this notification automatically
+Before performing any irreversible action, the worker verifies that the notification may still be delivered.
 
-   **Why this is Dangerous ?**
-   - The notification may never make forward progress
-   - The System appears `stuck` for this notification
-   - This is a liveness problem and not a correctness problem
+Examples include:
 
-   **Guarantees**
-   - No Incorrect Deliveries Occur
-   - No State Corruption occurs
+- Notification exists.
+- Notification is not already sent.
+- Notification is not already failed.
+- Retry limit has not been exceeded.
+- Notification is eligible for execution.
 
-   **Design Trade-Offs**
-   - A notification may remain in the `processing` state if a worker crashes after claiming ownership but before completing delivery or transitioning to a terminal state.
-   - This scenario represents a liveness concern rather than a correctness issue.
-   - The system intentionally does not automatically override the `processing` state to avoid unsafe duplicate deliveries. Instead, eventual progress can be restored through a separate recovery mechanism (e.g., a reaper or watchdog process) that detects notifications stuck in `processing` beyond a defined timeout and safely re-enqueues them.
-   - The Plan to add a Recovery Mechanism is Deferred Explicitly
+If validation fails, execution stops immediately.
 
-**Correctness is preserved but eventual progress requires a Recovery Mechanism**
+No external provider is contacted.
+
+---
+
+## Step 4 — Execute Provider
+
+The worker selects the provider registered for the notification.
+
+The provider performs the external delivery attempt.
+
+Providers never update notification state.
+
+Instead they return a `ProviderResult`.
+
+```
+Provider
+
+↓
+
+ProviderResult
+```
+
+This separation allows every provider to share the same execution model regardless of implementation.
+
+---
+
+# ProviderResult Contract
+
+Workers never interpret provider-specific exceptions, HTTP status codes, or SDK responses directly.
+
+Every provider is responsible for translating provider-specific behaviour into a common `ProviderResult`.
+
+This allows the notification engine to remain completely provider-agnostic.
+
+Every provider must return exactly one of three delivery outcomes.
+
+```
+SUCCESS
+
+TEMPORARY_FAILURE
+
+PERMANENT_FAILURE
+```
+
+Workers make all lifecycle decisions exclusively from these outcomes.
+
+---
+
+# Delivery Outcomes
+
+Every delivery attempt produces one and only one outcome.
+
+---
+
+## Success
+
+Meaning
+
+The external provider successfully accepted the notification for delivery.
+
+A successful attempt is terminal.
+
+Required Actions
+
+- Record a delivery attempt.
+- Increment `attempt_count`.
+- Transition notification state to `sent`.
+- Persist `sent_at`.
+- Do not schedule further retries.
+
+Result
+
+```
+processing
+
+↓
+
+sent
+```
+
+---
+
+## Temporary Failure
+
+Meaning
+
+The delivery failed for a reason that may succeed if attempted again later.
+
+Examples include:
+
+- Network timeout
+- Connection failure
+- Provider unavailable
+- HTTP 429
+- HTTP 503
+- Temporary infrastructure failure
+
+Required Actions
+
+- Record a delivery attempt.
+- Increment `attempt_count`.
+- Compute the next retry time.
+- Persist retry intent.
+- Transition notification back to `queued`.
+
+Result
+
+```
+processing
+
+↓
+
+queued
+
+↓
+
+(next_retry_at)
+```
+
+Temporary failures are non-terminal.
+
+---
+
+## Permanent Failure
+
+Meaning
+
+The notification can never succeed by retrying.
+
+Examples include:
+
+- Invalid recipient
+- Unsupported payload
+- Authentication failure
+- Provider validation error
+
+Required Actions
+
+- Record a delivery attempt.
+- Increment `attempt_count`.
+- Persist failure reason.
+- Transition notification to `failed`.
+
+Result
+
+```
+processing
+
+↓
+
+failed
+```
+
+Permanent failures are terminal.
+
+---
+
+# Notification State Machine
+
+Workers own every lifecycle transition after notification submission.
+
+The complete state machine is shown below.
+
+```
+created
+
+↓
+
+queued
+
+↓
+
+processing
+
+├──────────────┬──────────────────────┐
+│              │                      │
+│              │                      │
+▼              ▼                      ▼
+
+sent      queued (retry)          failed
+               │
+               ▼
+          processing
+```
+
+The worker never skips intermediate states.
+
+Every transition is explicitly persisted.
+
+---
+
+# Delivery Attempt Recording
+
+Every execution attempt is durably recorded before the notification reaches a terminal or retry state.
+
+Workers never modify previous attempts.
+
+Each attempt becomes a permanent historical record.
+
+A delivery attempt contains information such as:
+
+- Notification ID
+- Attempt number
+- Provider
+- Delivery status
+- Provider message ID
+- Provider error code
+- Error message
+- Raw provider response
+
+The delivery history therefore represents the complete execution history of a notification.
+
+Example
+
+```
+Attempt 1
+
+↓
+
+TEMPORARY_FAILURE
+
+↓
+
+Attempt 2
+
+↓
+
+TEMPORARY_FAILURE
+
+↓
+
+Attempt 3
+
+↓
+
+SUCCESS
+```
+
+Results in
+
+```
+delivery_attempts
+
+1 → temporary_failure
+
+2 → temporary_failure
+
+3 → success
+```
+
+No rows are updated.
+
+New rows are appended.
+
+---
+
+# Retry Scheduling
+
+Workers do not perform delayed retries.
+
+Instead, workers persist retry intent.
+
+Retry scheduling consists of three steps.
+
+```
+ProviderResult
+
+↓
+
+TEMPORARY_FAILURE
+
+↓
+
+Compute next_retry_at
+
+↓
+
+Persist next_retry_at
+
+↓
+
+Transition state → queued
+```
+
+At this point the worker has completed its responsibility.
+
+Execution ends.
+
+A separate retry scheduler is responsible for re-enqueueing notifications once `next_retry_at` has been reached.
+
+Separating retry scheduling from worker execution ensures that retries survive:
+
+- Worker crashes
+- Redis restarts
+- Process restarts
+- Container recreation
+
+Retry intent is durable because it is stored inside PostgreSQL.
+
+---
+
+# Why Workers Never Sleep
+
+Workers intentionally never wait for retry intervals.
+
+This means workers never execute logic similar to:
+
+```
+sleep(60)
+
+↓
+
+retry()
+```
+
+Sleeping workers waste compute resources and prevent efficient scaling.
+
+Instead, workers immediately persist retry intent and exit.
+
+Later, the Retry Scheduler observes that retry time has arrived and creates a new execution request.
+
+This keeps workers stateless and highly scalable.
+
+---
+
+# Worker Guard Rails
+
+Before attempting delivery, every worker verifies that execution is still valid.
+
+A worker must refuse execution if:
+
+- Notification does not exist.
+- Notification has already been sent.
+- Notification has already failed.
+- Maximum retry attempts have been exhausted.
+
+These guard rails ensure duplicate queue messages cannot produce duplicate deliveries.
+
+Because every worker revalidates state from PostgreSQL, duplicate Redis jobs are harmless.
+
+---
+
+# Concurrency Model
+
+Multiple workers may execute concurrently.
+
+Correctness is achieved by treating PostgreSQL as the authoritative execution coordinator.
+
+Workers never coordinate through Redis.
+
+Workers coordinate exclusively through persisted notification state.
+
+This allows workers to scale horizontally without introducing distributed locking for normal execution.
+
+Retry scheduling additionally uses row-level locking (`FOR UPDATE SKIP LOCKED`) to ensure retryable notifications are claimed by only one scheduler transaction.
+
+---
+
+# Provider Independence
+
+Workers are intentionally unaware of provider-specific implementations.
+
+The execution workflow remains identical regardless of provider.
+
+```
+Worker
+
+↓
+
+Provider
+
+↓
+
+ProviderResult
+
+↓
+
+Persist Result
+
+↓
+
+State Transition
+```
+
+Whether the provider is:
+
+- MailRelay
+- Amazon SES
+- SendGrid
+- SMTP
+- Fake Provider
+
+the worker executes exactly the same algorithm.
+
+Adding a new provider therefore requires no changes to the worker execution model.
+
+Only a new provider implementation is required.
+
+---
+
+# Worker Guarantees
+
+Workers provide the following guarantees.
+
+## Durable Execution History
+
+Every delivery attempt is permanently recorded.
+
+No attempt history is lost.
+
+---
+
+## Deterministic State Transitions
+
+Notifications progress through a well-defined lifecycle.
+
+Workers never perform implicit state transitions.
+
+---
+
+## Provider Independence
+
+Workers execute providers through a common interface.
+
+Provider-specific behaviour never leaks into worker logic.
+
+---
+
+## Retry Durability
+
+Retry intent is persisted before execution completes.
+
+Retries therefore survive infrastructure failures.
+
+---
+
+## At-Least-Once Delivery
+
+Workers guarantee at-least-once execution.
+
+Duplicate execution requests may occur.
+
+Duplicate irreversible side effects are prevented through worker validation and persisted notification state.
+
+Exactly-once delivery is intentionally not guaranteed.
+
+---
+
+# Summary
+
+Workers are the execution engine of Relays.
+
+They perform the only irreversible operation in the system: notification delivery.
+
+Workers own notification lifecycle transitions, record immutable delivery history, persist retry intent, and execute providers through a provider-independent abstraction.
+
+By separating execution from retry scheduling and treating PostgreSQL as the source of truth, workers remain stateless, horizontally scalable, and resilient to infrastructure failures.

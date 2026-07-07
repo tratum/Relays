@@ -3,9 +3,9 @@ from app.modules.notifications.providers.email.base import EmailProvider
 from app.modules.notifications.providers.email.mailrelay.client import (
     MailRelayClient,
 )
-from app.modules.notifications.providers.email.mailrelay.provider import (
-    MailRelayProvider,
-)
+
+from ..email.fake.provider import FakeProvider
+from ..email.mailrelay.provider import MailRelayProvider
 
 
 class EmailProviderRegsitry:
@@ -28,6 +28,9 @@ class EmailProviderRegsitry:
             provider_instance = MailRelayProvider(
                 client=MailRelayClient(),
             )
+
+        elif provider == EmailNotificationProviders.FAKE:
+            provider_instance = FakeProvider()
 
         else:
             raise ValueError(f"Unsupported Email Provider: {provider}")

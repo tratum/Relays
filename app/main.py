@@ -62,7 +62,7 @@ async def app_lifespan(app: FastAPI):
             decode_responses=True,
         )
 
-        redis.ping()
+        await redis.ping()
 
         set_redis(redis)
     except Exception:
