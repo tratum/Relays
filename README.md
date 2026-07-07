@@ -252,8 +252,8 @@ Each transition is persisted and queryable.
 - [Worker Model](docs/WORKERS.md)
 - [Recovery Model](docs/RECOVERY.md)
 - [Product Requirements](docs/PRD.md)
-- [Retry Engine] (docs/RETRY_ENGINE.md)
-- [Providers] (docs/PROVIDERS.md)
+- [Retry Engine](docs/RETRY_ENGINE.md)
+- [Providers](docs/PROVIDERS.md)
 
 ---
 
