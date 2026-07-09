@@ -246,14 +246,38 @@ Each transition is persisted and queryable.
 
 ## Documentation
 
-- [API Contract](docs/API.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Data Model](docs/DATA_MODEL.md)
-- [Worker Model](docs/WORKERS.md)
-- [Recovery Model](docs/RECOVERY.md)
+Getting Started
+----------------
+
 - [Product Requirements](docs/PRD.md)
-- [Retry Engine](docs/RETRY_ENGINE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+
+Core Platform
+--------------
+
+- [Data Model](docs/DATA_MODEL.md)
+- [API Design](docs/API.md)
+
+Identity
+---------
+
+- [Accounts](docs/ACCOUNTS.md)
+- [Authentication](docs/AUTH.md)
+
+Notification Engine
+--------------------
+
+- [Workers](docs/WORKERS.md)
 - [Providers](docs/PROVIDERS.md)
+- [Retry Engine](docs/RETRY_ENGINE.md)
+- [Recovery Model](docs/RECOVERY.md)
+
+Commercial Platform
+--------------------
+
+- [Usage](docs/USAGE.md)
+- [Subscriptions](docs/SUBSCRIPTIONS.md) _(Coming Soon)_
+- [Billing](docs/BILLING.md)
 
 ---
 
