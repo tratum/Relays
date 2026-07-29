@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS api_keys (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id UUID NOT NULL,
+  created_by UUID NOT NULL,
   name VARCHAR(100) NOT NULL,
   key_prefix VARCHAR(12) NOT NULL,
   key_hash TEXT NOT NULL,
@@ -15,6 +16,11 @@ CREATE TABLE IF NOT EXISTS api_keys (
   CONSTRAINT fk_workspace_id
     FOREIGN KEY (workspace_id)
     REFERENCES workspaces(id)
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_created_by
+    FOREIGN KEY (created_by)
+    REFERENCES users(id)
     ON DELETE RESTRICT,
 
   CONSTRAINT chk_name_not_blank

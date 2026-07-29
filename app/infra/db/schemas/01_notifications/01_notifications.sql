@@ -1,6 +1,9 @@
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  api_key_id UUID NOT NULL,
   channel TEXT NOT NULL,
+  provider TEXT NOT NULL,
   recipient TEXT NOT NULL,
   payload JSONB NOT NULL,
   metadata JSONB,
@@ -28,13 +31,6 @@ CREATE TABLE IF NOT EXISTS notifications (
       AND attempt_count <= max_attempts
     ),
 
-  CONSTRAINT chk_sent_at_timestamp
-    CHECK (
-      (state = 'sent' AND sent_at IS NOT NULL)
-      OR
-      (state <> 'sent')
-    ),
-
   CONSTRAINT chk_payload_is_object
     CHECK(jsonb_typeof(payload) = 'object'),
 
@@ -49,7 +45,49 @@ CREATE TABLE IF NOT EXISTS notifications (
     CHECK(updated_at >= created_at),
 
   CONSTRAINT recipient_not_empty
-    CHECK (length(recipient) > 0)
+    CHECK (length(recipient) > 0),
+
+  CONSTRAINT fk_notifications_workspace
+    FOREIGN KEY (workspace_id)
+    REFERENCES workspaces(id)
+    ON DELETE RESTRICT,
+
+  CONSTRAINT fk_notifications_api_key
+    FOREIGN KEY (api_key_id)
+    REFERENCES api_keys(id)
+    ON DELETE SET NULL,
+
+  CONSTRAINT chk_provider
+    CHECK (
+      provider IS NULL
+      OR provider IN (
+        'fake',
+        'mailrelay'
+      )
+    ),
+
+  CONSTRAINT chk_queued_at
+  CHECK (
+    queued_at IS NULL
+    OR queued_at >= created_at
+  ),
+
+  CONSTRAINT chk_next_retry_at
+  CHECK (
+    next_retry_at IS NULL
+    OR next_retry_at >= created_at
+  ),
+
+  CONSTRAINT chk_sent_at_timestamp
+  CHECK (
+    (state = 'sent') = (sent_at IS NOT NULL)
+  ),
+
+  CONSTRAINT chk_retry_states
+    CHECK (
+      state IN ('created', 'queued', 'processing')
+      OR next_retry_at IS NULL
+    )
 
   );
 
@@ -66,3 +104,15 @@ ON notifications(created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_retry
 ON notifications(next_retry_at)
 WHERE state IN ('created', 'queued', 'processing');
+
+CREATE INDEX IF NOT EXISTS idx_notifications_workspace
+ON notifications(workspace_id);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_api_key
+ON notifications(api_key_id);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_workspace_created
+ON notifications(
+    workspace_id,
+    created_at DESC
+);

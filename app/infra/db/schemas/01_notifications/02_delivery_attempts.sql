@@ -4,6 +4,9 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
   attempt_number INT NOT NULL,
   status delivery_status NOT NULL,
   error_message TEXT,
+  provider TEXT NOT NULL,
+  provider_message_id TEXT,
+  provider_error_code TEXT,
   raw_provider_response JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -22,5 +25,9 @@ CREATE TABLE IF NOT EXISTS delivery_attempts (
   );
 
 -- INDEXES
-CREATE INDEX idx_delivery_attempts_notification
-ON delivery_attempts(notification_id);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_attempt_notification_created
+ON delivery_attempts(
+    notification_id,
+    created_at DESC
+);
