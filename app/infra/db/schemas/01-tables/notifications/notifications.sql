@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL,
+  api_key_id UUID NOT NULL,
+  channel TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  recipient TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  metadata JSONB,
+  state notification_state NOT NULL DEFAULT 'created',
+  attempt_count INT NOT NULL DEFAULT 0,
+  max_attempts INT NOT NULL DEFAULT 5,
+  next_retry_at TIMESTAMPTZ,
+  queued_at TIMESTAMPTZ,
+  last_attempt_at TIMESTAMPTZ,
+  last_error TEXT,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );

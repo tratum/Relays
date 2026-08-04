@@ -3,13 +3,26 @@ from pathlib import Path
 SCHEMA_DIR = Path("app/infra/db/schemas")
 MIGRATIONS_DIR = Path("app/infra/db/migrations")
 
+SCHEMA_PHASES = (
+    "00-types",
+    "01-tables",
+    "02-constraints",
+    "03-indexes",
+    # "04-views", ## Currently Unused and Empty
+)
+
 
 async def run_base_schema(conn):
-    # Execute base schema files for a fresh database
-    schema_files = sorted(SCHEMA_DIR.rglob("*.sql"))
+    """Execute the canonical schema for a fresh database."""
 
-    for file in schema_files:
-        await conn.execute(file.read_text())
+    for phase in SCHEMA_PHASES:
+        phase_dir = SCHEMA_DIR / phase
+
+        if not phase_dir.exists():
+            continue
+
+        for file in sorted(phase_dir.rglob("*.sql")):
+            await conn.execute(file.read_text())
 
 
 async def run_migrations(conn):
@@ -31,17 +44,17 @@ async def run_migrations(conn):
         """
     )
 
-    # 3. Fresh database → run base schema
+    # 3. Fresh database → run canonical schema
     if current_version is None:
-        await run_base_schema(conn)
+        async with conn.transaction():
+            await run_base_schema(conn)
 
-        # Record base schema initialization
-        await conn.execute(
-            """
-            INSERT INTO schema_version(version)
-            VALUES (0);
-            """
-        )
+            await conn.execute(
+                """
+                INSERT INTO schema_version(version)
+                VALUES (0);
+                """
+            )
 
         current_version = 0
 
@@ -52,18 +65,18 @@ async def run_migrations(conn):
     for file in migration_files:
         migration_version = int(file.stem.split("_")[0])
 
-        if migration_version > current_version:
-            async with conn.transaction():
-                # Execute migration
-                await conn.execute(file.read_text())
+        if migration_version <= current_version:
+            continue
 
-                # Record migration version
-                await conn.execute(
-                    """
-                    INSERT INTO schema_version(version)
-                    VALUES ($1);
-                    """,
-                    migration_version,
-                )
+        async with conn.transaction():
+            await conn.execute(file.read_text())
 
-            current_version = migration_version
+            await conn.execute(
+                """
+                INSERT INTO schema_version(version)
+                VALUES ($1);
+                """,
+                migration_version,
+            )
+
+        current_version = migration_version
