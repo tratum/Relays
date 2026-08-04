@@ -1,0 +1,20 @@
+Create Subscription
+        │
+        ├── Assign Plan
+        └── Create Initial Billing Period
+
+
+Renew Subscription
+        │
+        ├── Close Current Billing Period
+        └── Create Next Billing Period
+
+
+Change Plan
+        │
+        └── Update Plan Reference
+
+
+Cancel Subscription
+        │
+        └── Close Active Billing Period
