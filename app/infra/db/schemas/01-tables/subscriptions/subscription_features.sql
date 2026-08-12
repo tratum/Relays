@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS subscription_features (
+  id INTEGER GENERATED ALWAYS AS IDENTITY,
+  feature_key VARCHAR(100) NOT NULL,
+  display_name VARCHAR(100) NOT NULL,
+  description TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
