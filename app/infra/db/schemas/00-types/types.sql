@@ -3,6 +3,11 @@
 -- ====================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- ==========================================
+-- Enable GiST Indexes for Range Operations
+-- ==========================================
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+
 -- =========================
 -- ENUM: idempotency_state
 -- =========================
