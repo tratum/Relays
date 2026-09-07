@@ -1,4 +1,4 @@
-ALTER TABLE subscription_features
+ALTER TABLE features
   ADD CONSTRAINT pk_features
       PRIMARY KEY (id),
 

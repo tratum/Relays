@@ -9,5 +9,5 @@ ALTER TABLE plan_features
 
   ADD CONSTRAINT fk_plan_features_feature
     FOREIGN KEY (feature_id)
-    REFERENCES subscription_features(id)
+    REFERENCES features(id)
     ON DELETE RESTRICT;
