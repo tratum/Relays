@@ -1,7 +1,4 @@
 ALTER TABLE registration_otp
-  ADD CONSTRAINT pk_id_registration_otp
-      PRIMARY KEY (id),
-
   ADD CONSTRAINT uq_email
     UNIQUE(email),
 
