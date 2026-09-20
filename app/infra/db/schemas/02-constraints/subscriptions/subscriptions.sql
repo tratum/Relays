@@ -1,7 +1,4 @@
 ALTER TABLE subscriptions
-  ADD CONSTRAINT pk_subscriptions
-    PRIMARY KEY (id),
-
   ADD CONSTRAINT uq_workspace_subscriptions
     UNIQUE (workspace_id),
 
@@ -30,5 +27,3 @@ ALTER TABLE subscriptions
       cancelled_at IS NULL
       OR cancelled_at >= started_at
     );
-
-

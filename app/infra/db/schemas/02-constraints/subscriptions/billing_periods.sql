@@ -1,7 +1,4 @@
 ALTER TABLE billing_periods
-  ADD CONSTRAINT pk_billing_periods
-    PRIMARY KEY(id),
-
   ADD CONSTRAINT uq_period_start_billing_periods
     UNIQUE(subscription_id, period_start),
 

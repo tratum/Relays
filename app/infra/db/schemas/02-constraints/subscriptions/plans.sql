@@ -1,7 +1,4 @@
 ALTER TABLE plans
-  ADD CONSTRAINT pk_plans
-    PRIMARY KEY(id),
-
   ADD CONSTRAINT uq_slug_plans
     UNIQUE (slug),
 

@@ -1,7 +1,4 @@
 ALTER TABLE features
-  ADD CONSTRAINT pk_features
-      PRIMARY KEY (id),
-
   ADD CONSTRAINT uq_feature_key_features
     UNIQUE (feature_key),
 
