@@ -1,7 +1,4 @@
 ALTER TABLE sessions
-  ADD CONSTRAINT pk_sessions
-    PRIMARY KEY (id),
-
   ADD CONSTRAINT fk_sessions_user_id
     FOREIGN KEY (user_id)
     REFERENCES users(id)
