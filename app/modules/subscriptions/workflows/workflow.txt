@@ -1,20 +1,149 @@
-Create Subscription
-        │
-        ├── Assign Plan
-        └── Create Initial Billing Period
+CREATE
+────────────────────────────
+Subscription: ACTIVE
+Billing period: created
+period_start = subscription start
+period_end = +1 calendar month
 
 
-Renew Subscription
-        │
-        ├── Close Current Billing Period
-        └── Create Next Billing Period
+PLAN CHANGE
+────────────────────────────
+Existing period: closed at change time
+Subscription.plan_id: changed
+New billing period: created
+New period_start = change time
+New period_end = +1 calendar month
 
 
-Change Plan
-        │
-        └── Update Plan Reference
+CANCEL
+────────────────────────────
+Subscription: CANCELLED
+cancelled_at: set
+Current billing period: UNCHANGED
+No new period
+Access continues until period_end
 
 
-Cancel Subscription
-        │
-        └── Close Active Billing Period
+create_subscription
+│
+├── 1. Validate existing subscription
+│       └── get_subscription_by_workspace()
+│
+│       └── exists → domain error
+│
+├── 2. Resolve plan
+│       └── get_plan()
+│
+│       └── missing → domain error
+│
+├── 3. Validate plan is active
+│       └── inactive → domain error
+│
+├── 4. Create subscription
+│       └── insert_subscription()
+│
+├── 5. Create initial billing period
+│       └── insert_billing_period()
+│           ├── period_start = subscription.started_at
+│           └── period_end = +1 calendar month
+│
+├── 6. Transaction
+│       ├── insert_subscription()
+│       └── insert_billing_period()
+│
+└── 7. Return
+        ├── subscription
+        └── billing_period
+
+
+renew_subscription
+│
+├── 1. Resolve subscription
+│       └── get_subscription_by_workspace()
+│
+│       └── missing → domain error
+│
+├── 2. Validate subscription state
+│       └── cancelled → domain error
+│
+├── 3. Resolve current billing period
+│       └── get_current_billing_period()
+│
+│       └── missing → domain error
+│
+├── 4. Determine next billing period
+│       ├── period_start = current_period.period_end
+│       └── period_end = +1 calendar month
+│
+├── 5. Create billing period
+│       └── insert_billing_period()
+│
+└── 6. Return
+        └── billing_period
+
+
+change_subscription_plan
+│
+├── 1. Resolve subscription
+│       └── get_subscription_by_workspace()
+│
+│       └── missing → domain error
+│
+├── 2. Validate subscription state
+│       └── cancelled → domain error
+│
+├── 3. Resolve target plan
+│       └── get_plan()
+│
+│       └── missing → domain error
+│
+├── 4. Validate target plan
+│       ├── inactive → domain error
+│       └── same as current plan → domain error
+│
+├── 5. Resolve current billing period
+│       └── get_current_billing_period()
+│
+│       └── missing → domain error
+│
+├── 6. Update subscription plan
+│       └── update_subscription_plan()
+│
+├── 7. End current billing period
+│       └── period_end = plan_change_time
+│
+├── 8. Create new billing period
+│       └── insert_billing_period()
+│           ├── period_start = plan_change_time
+│           └── period_end = +1 calendar month
+│
+├── 9. Transaction
+│       ├── update_subscription_plan()
+│       ├── end current billing period
+│       └── insert_billing_period()
+│
+└── 10. Return
+         ├── subscription
+         └── billing_period
+
+
+cancel_subscription
+│
+├── 1. Resolve subscription
+│       └── get_subscription_by_workspace()
+│
+│       └── missing → domain error
+│
+├── 2. Validate subscription state
+│       └── already cancelled → domain error
+│
+├── 3. Cancel subscription
+│       └── cancel_subscription()
+│           ├── status = cancelled
+│           └── cancelled_at = now()
+│
+├── 4. Billing period handling
+│       └── current billing period remains historical
+│
+└── 5. Return
+        └── cancelled subscription
