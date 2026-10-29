@@ -19,7 +19,7 @@ async def create_subscription(
     *,
     # TODO: Remove temp flag after payments module is integrated with this module
     payment_verified: bool = False,
-):
+) -> dict:
 
     if not conn.is_in_transaction():
         raise RuntimeError(

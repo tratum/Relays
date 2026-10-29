@@ -16,7 +16,7 @@ from ..db.subscriptions_queries import get_subscription_by_workspace
 async def get_subscription(
     conn: asyncpg.Connection,
     workspace_id: UUID,
-):
+) -> dict:
     sub = await get_subscription_by_workspace(conn, workspace_id)
 
     if sub is None:
