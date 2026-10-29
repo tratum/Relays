@@ -16,3 +16,4 @@ class ErrorCode(StrEnum):
     REFRESH_TOKEN_EXPIRED = "refresh_token expired"
     INVALID_REFRESH_TOKEN = "invalid token"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
+    PAYMENT_REQUIRED = "payment_required"
